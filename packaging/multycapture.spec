@@ -9,10 +9,14 @@ dpkg-deb) package that folder.
 import sys
 import os
 
+# Paths in a .spec are resolved relative to the spec's own directory (SPECPATH),
+# not the current working directory. Anchor everything to it explicitly.
+ROOT = os.path.dirname(SPECPATH)  # repo root (SPECPATH == <root>/packaging)
+
 # pynput and mss import their OS backend dynamically, so PyInstaller can't see it.
 if sys.platform.startswith("win"):
     hiddenimports = ["pynput.keyboard._win32", "pynput.mouse._win32", "mss.windows"]
-    icon = os.path.join("packaging", "assets", "multycapture.ico")
+    icon = os.path.join(SPECPATH, "assets", "multycapture.ico")
 elif sys.platform.startswith("linux"):
     hiddenimports = [
         "pynput.keyboard._xorg", "pynput.mouse._xorg", "mss.linux",
@@ -24,8 +28,8 @@ else:
     icon = None
 
 a = Analysis(
-    ["packaging/entry.py"],
-    pathex=["src"],
+    [os.path.join(SPECPATH, "entry.py")],
+    pathex=[os.path.join(ROOT, "src")],
     binaries=[],
     datas=[],
     hiddenimports=hiddenimports,

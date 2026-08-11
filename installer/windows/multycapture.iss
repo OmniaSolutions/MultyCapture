@@ -43,12 +43,9 @@ Source: "..\..\dist\MultyCapture\*"; DestDir: "{app}"; Flags: recursesubdirs cre
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-
-[Registry]
-; Optional run-at-startup for the current user.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; \
-  Tasks: startup; Flags: uninsdeletevalue
+; Optional run-at-startup: a shortcut in the common Startup folder (matches the
+; admin install mode, unlike a per-user HKCU key).
+Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startup
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \
