@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=MultyCapture
+GenericName=Screen documentation recorder
+Comment=Capture clicks and keystrokes into step-by-step documentation
+Exec=multycapture
+Icon=multycapture
+Terminal=false
+Categories=Utility;Graphics;
+Keywords=screenshot;capture;documentation;screencast;
+StartupNotify=false

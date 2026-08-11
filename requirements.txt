@@ -1,0 +1,16 @@
+# MultyCapture runtime dependencies
+# Cross-platform: Windows + Linux (X11). Wayland is detected and refused.
+
+# --- shared, cross-platform ---
+mss>=9.0            # fast per-monitor screenshots (Windows, Linux/X11)
+pynput>=1.7         # global mouse/keyboard hooks (Windows, Linux/X11)
+Pillow>=10.0        # image processing: crop, annotate, thumbnails
+python-docx>=1.1    # generate Word (.docx) documentation
+PySide6-Essentials>=6.6  # system-tray control app (Qt)
+
+# --- Linux (X11) only: active-window title/rect/pid ---
+python-xlib>=0.33 ; sys_platform == "linux"
+ewmh>=0.1.6        ; sys_platform == "linux"
+
+# Note: the Windows active-window + DPI backend uses pure ctypes (stdlib),
+# so no pywin32 dependency is required on Windows.

@@ -1,0 +1,13 @@
+# Normalize text in the repo; enforce LF where a tool requires it.
+* text=auto
+
+# Shell scripts must be LF or they break on Linux (bad interpreter).
+*.sh text eol=lf
+
+# Desktop entries and control files are read on Linux.
+*.desktop text eol=lf
+
+# Binary assets — never touch line endings.
+*.png binary
+*.ico binary
+*.docx binary

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environment
+.venv/
+
+# Captured sessions (recorded data / screenshots)
+captures/
+
+# Packaging build artifacts
+installer/windows/Output/
+installer/debian/pkgroot/
+installer/debian/out/
+*.deb
+
+# OS / editor
+.DS_Store
+Thumbs.db

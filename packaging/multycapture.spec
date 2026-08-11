@@ -1,0 +1,66 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller spec for MultyCapture (Windows + Linux).
+
+Run from the repo root:  pyinstaller --noconfirm packaging/multycapture.spec
+Produces a one-folder bundle in dist/MultyCapture/. The installers (Inno Setup /
+dpkg-deb) package that folder.
+"""
+
+import sys
+import os
+
+# pynput and mss import their OS backend dynamically, so PyInstaller can't see it.
+if sys.platform.startswith("win"):
+    hiddenimports = ["pynput.keyboard._win32", "pynput.mouse._win32", "mss.windows"]
+    icon = os.path.join("packaging", "assets", "multycapture.ico")
+elif sys.platform.startswith("linux"):
+    hiddenimports = [
+        "pynput.keyboard._xorg", "pynput.mouse._xorg", "mss.linux",
+        "Xlib", "Xlib.display", "ewmh",
+    ]
+    icon = None
+else:
+    hiddenimports = []
+    icon = None
+
+a = Analysis(
+    ["packaging/entry.py"],
+    pathex=["src"],
+    binaries=[],
+    datas=[],
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets"],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="MultyCapture",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,          # tray GUI: no console window
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=icon,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="MultyCapture",
+)
