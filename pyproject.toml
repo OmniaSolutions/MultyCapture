@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multycapture"
-version = "0.1.0"
+version = "0.1.1"
 description = "Fast-track screencasts into step-by-step documentation by capturing every click and keystroke."
 readme = "README.md"
 requires-python = ">=3.12"
