@@ -48,8 +48,13 @@ Runs a PySide6 tray icon. Left-click (or the menu) to **Start** / **Stop**.
 Starting waits a configurable **start delay** (default 5s) so you can get to the
 right window first — the icon shows an amber countdown, then turns red while
 recording. Change the delay under **Start delay** in the menu (presets or
-*Custom…*); the choice is remembered. The menu also generates a `.docx` from the
-last session and opens the captures folder.
+*Custom…*); the choice is remembered.
+
+When a recording stops, the `.docx` is generated and opened in your default
+editor. Turn that off with **Generate .docx when recording stops** — the choice
+is remembered. **Generate .docx…** builds one on demand: it asks for a
+destination folder first, writes the document there, then opens it. The menu
+also opens the captures folder.
 
 ### Command line
 

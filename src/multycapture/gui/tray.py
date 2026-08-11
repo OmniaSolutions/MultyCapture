@@ -1,9 +1,17 @@
 """PySide6 system-tray control for MultyCapture.
 
 A tray icon drives recording: Start (after a configurable countdown), Stop, choose
-the start delay, generate a .docx from the last session, and quit. The icon colour
-reflects state — idle (blue), counting down (amber, with the seconds remaining
-drawn on it), and recording (red).
+the start delay, generate a .docx, and quit. The icon colour reflects state — idle
+(blue), counting down (amber, with the seconds remaining drawn on it), and
+recording (red).
+
+Two routes produce a document, both opening it in the system's default editor
+when it is done:
+
+* automatically when a recording stops, written beside the capture — on by
+  default, switched off with "Generate .docx when recording stops";
+* on demand via "Generate .docx…", which asks where to put the file first and
+  only then builds it.
 
 The Recorder already runs its input hooks on background threads, so it coexists
 with the Qt event loop: the tray just calls ``start()`` / ``stop()`` and polls
@@ -12,6 +20,9 @@ with the Qt event loop: the tray just calls ``start()`` / ``stop()`` and polls
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 import webbrowser
 from pathlib import Path
@@ -20,7 +31,7 @@ from typing import Optional
 from PySide6.QtCore import Qt, QTimer, QSettings
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QInputDialog, QMenu, QMessageBox, QSystemTrayIcon,
+    QApplication, QFileDialog, QInputDialog, QMenu, QMessageBox, QSystemTrayIcon,
 )
 
 from ..capture import Recorder, SessionReader
@@ -28,6 +39,9 @@ from ..capture import Recorder, SessionReader
 # Preset start-delay choices (seconds) offered in the menu.
 _DELAY_PRESETS = [0, 3, 5, 10]
 _DEFAULT_DELAY = 5
+
+# Build and open a document as soon as a recording stops, unless switched off.
+_DEFAULT_AUTO_DOC = True
 
 _IDLE = "#3b82f6"       # blue
 _COUNTDOWN = "#f59e0b"  # amber
@@ -39,13 +53,17 @@ class TrayApp:
         self.root = root
         self.settings = QSettings("MultyCapture", "MultyCapture")
         self.start_delay = int(self.settings.value("start_delay", _DEFAULT_DELAY))
+        self.auto_doc = self.settings.value("auto_doc", _DEFAULT_AUTO_DOC, type=bool)
+        # remembered destination for "Generate .docx…" (None until first use)
+        self._last_doc_dir: Optional[str] = self.settings.value("last_doc_dir") or None
 
         self._recorder: Optional[Recorder] = None
         self._recording = False
         self._counting = False
         self._remaining = 0
         self._doc_thread: Optional[threading.Thread] = None
-        self._doc_result: Optional[tuple[bool, str]] = None
+        # (succeeded, path-or-error, open-when-done), handed from worker to UI
+        self._doc_result: Optional[tuple[bool, str, bool]] = None
 
         self.tray = QSystemTrayIcon()
         self.tray.setIcon(self._icon(_IDLE))
@@ -101,9 +119,15 @@ class TrayApp:
 
         self.menu.addSeparator()
 
-        self.act_doc = QAction("Generate .docx from last session", self.menu)
-        self.act_doc.triggered.connect(self.generate_last_doc)
+        self.act_doc = QAction("Generate .docx…", self.menu)
+        self.act_doc.triggered.connect(self.generate_doc)
         self.menu.addAction(self.act_doc)
+
+        self.act_auto_doc = QAction("Generate .docx when recording stops",
+                                    self.menu, checkable=True)
+        self.act_auto_doc.setChecked(self.auto_doc)
+        self.act_auto_doc.toggled.connect(self.set_auto_doc)
+        self.menu.addAction(self.act_auto_doc)
 
         self.act_open = QAction("Open captures folder", self.menu)
         self.act_open.triggered.connect(self._open_captures)
@@ -143,6 +167,10 @@ class TrayApp:
         )
         if ok:
             self.set_delay(value)
+
+    def set_auto_doc(self, on: bool) -> None:
+        self.auto_doc = bool(on)
+        self.settings.setValue("auto_doc", self.auto_doc)
 
     # ------------------------------------------------------------------ #
     # recording lifecycle
@@ -202,6 +230,7 @@ class TrayApp:
         self._recording = False
         self._reset_idle()
         self._notify("Recording stopped", f"{count} events saved to {session_dir}")
+        self._maybe_auto_doc(session_dir, count)
 
     def _reset_idle(self) -> None:
         self.tray.setIcon(self._icon(_IDLE))
@@ -218,30 +247,63 @@ class TrayApp:
             self._reset_idle()
             self._notify("Recording stopped (hotkey)",
                          f"{count} events saved to {session_dir}")
+            self._maybe_auto_doc(session_dir, count)
         self._check_doc_result()
 
     # ------------------------------------------------------------------ #
     # docx generation (off the UI thread)
     # ------------------------------------------------------------------ #
-    def generate_last_doc(self) -> None:
+    def generate_doc(self) -> None:
+        """Ask where the document should go, then build it there and open it."""
         if self._doc_thread and self._doc_thread.is_alive():
             self._notify("Please wait", "A document is already being generated.")
             return
         try:
-            session_dir = str(SessionReader.latest(self.root).dir)
+            session_dir = Path(SessionReader.latest(self.root).dir)
         except FileNotFoundError:
             self._notify("No sessions", "Record something first.",
                          QSystemTrayIcon.Warning)
+            return
+
+        # Ask first, build second: the .docx is assembled straight into the
+        # chosen folder rather than written somewhere else and moved.
+        start_at = self._last_doc_dir or str(Path(self.root).resolve())
+        folder = QFileDialog.getExistingDirectory(
+            None, "MultyCapture — save the document in…", start_at,
+        )
+        if not folder:
+            return  # cancelled
+        self._last_doc_dir = folder
+        self.settings.setValue("last_doc_dir", folder)
+
+        # the session directory is named for the session id
+        out = Path(folder) / f"{session_dir.name}.docx"
+        self._start_doc_job(str(session_dir), str(out))
+
+    def _maybe_auto_doc(self, session_dir, count: int) -> None:
+        """Generate and open a document for a just-finished recording."""
+        if not self.auto_doc:
+            return
+        if count <= 0:
+            # nothing was captured; an empty document is worse than none
+            self._notify("Nothing captured", "No events recorded, so no document.")
+            return
+        self._start_doc_job(str(session_dir), None)
+
+    def _start_doc_job(self, session_dir: str, out_path: Optional[str]) -> None:
+        """Build a .docx on a worker thread; ``None`` writes beside the capture."""
+        if self._doc_thread and self._doc_thread.is_alive():
+            self._notify("Please wait", "A document is already being generated.")
             return
         self._notify("Generating .docx", "This can take a moment…")
 
         def worker():
             try:
                 from ..generate import generate_docx
-                out = generate_docx(session_dir)
-                self._doc_result = (True, str(out))
+                out = generate_docx(session_dir, out_path)
+                self._doc_result = (True, str(out), True)
             except Exception as exc:
-                self._doc_result = (False, str(exc))
+                self._doc_result = (False, str(exc), False)
 
         self._doc_thread = threading.Thread(target=worker, daemon=True)
         self._doc_thread.start()
@@ -249,12 +311,29 @@ class TrayApp:
     def _check_doc_result(self) -> None:
         if self._doc_result is None:
             return
-        ok, payload = self._doc_result
+        ok, payload, open_when_done = self._doc_result
         self._doc_result = None
         if ok:
             self._notify("Document ready", payload)
+            if open_when_done:
+                self._open_in_editor(payload)
         else:
             self._notify("Generation failed", payload, QSystemTrayIcon.Critical)
+
+    def _open_in_editor(self, path: str) -> None:
+        """Hand the file to whatever the desktop uses for .docx."""
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(path)  # noqa: SIM115 - Windows-only API
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as exc:  # no handler registered, xdg-open missing, …
+            # the document exists either way, so this is not a failure
+            webbrowser.open(Path(path).as_uri())
+            self._notify("Could not open the document", str(exc),
+                         QSystemTrayIcon.Warning)
 
     # ------------------------------------------------------------------ #
     # misc
