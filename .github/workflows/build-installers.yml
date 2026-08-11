@@ -49,19 +49,31 @@ jobs:
   # --------------------------------------------------------------------- #
   linux:
     runs-on: ubuntu-latest
+    # Build inside Debian 11 (glibc 2.31). PyInstaller bundles the glibc-linked
+    # libraries it finds on the build host, so a bundle frozen on ubuntu-latest
+    # (glibc 2.39) dies on any older distro with:
+    #   libm.so.6: version `GLIBC_2.38' not found
+    # glibc is backward- but not forward-compatible, so building on the OLDEST
+    # distro we support makes the bundle run on that one and everything newer.
+    container: python:3.12-bullseye
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
+      # The bullseye container is minimal, unlike the ubuntu-latest image which
+      # ships most of these preinstalled. PyInstaller only bundles libraries it
+      # can actually resolve at freeze time, so anything missing here is
+      # silently dropped from the bundle and fails at runtime instead.
       - name: Install system libs for Qt (xcb)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            dpkg-dev libxcb1 libxcb-cursor0 libxkbcommon-x11-0 libegl1 \
-            libglib2.0-0 libfontconfig1 libdbus-1-3 xvfb
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            dpkg-dev xvfb xauth \
+            libxcb1 libxcb-cursor0 libxcb-shape0 libxcb-randr0 libxcb-icccm4 \
+            libxcb-keysyms1 libxcb-xinerama0 libxcb-image0 libxcb-render-util0 \
+            libxcb-sync1 libxcb-xfixes0 libxcb-shm0 libxcb-xkb1 libx11-xcb1 \
+            libxkbcommon-x11-0 libegl1 libglib2.0-0 libfontconfig1 libdbus-1-3 \
+            libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgdk-pixbuf2.0-0 \
+            libcairo2 libpango-1.0-0
 
       - name: Install app + build tools
         run: pip install -e ".[build]"

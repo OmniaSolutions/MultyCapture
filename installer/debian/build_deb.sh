@@ -86,7 +86,10 @@ chmod 0755 "$PKG/DEBIAN/postinst"
 echo ">> Building .deb"
 mkdir -p "$OUT"
 DEB="$OUT/multycapture_${VERSION}_${ARCH}.deb"
-dpkg-deb --root-owner-group --build "$PKG" "$DEB"
+# xz, not the modern dpkg-deb default (zstd): dpkg only learned to read
+# zstd members in 1.21.18, so a zstd .deb built on ubuntu-latest cannot be
+# installed on Debian 11/12 or Ubuntu 20.04. xz is understood everywhere.
+dpkg-deb --root-owner-group -Zxz --build "$PKG" "$DEB"
 
 echo ">> Done: $DEB"
 dpkg-deb --info "$DEB" | sed 's/^/   /'
