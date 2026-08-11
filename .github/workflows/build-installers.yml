@@ -69,10 +69,11 @@ jobs:
       - name: Freeze with PyInstaller
         run: pyinstaller --noconfirm packaging/multycapture.spec
 
-      - name: Verify the frozen bundle (headless Qt)
+      - name: Verify the frozen bundle (headless)
         env:
-          QT_QPA_PLATFORM: offscreen
-        run: ./dist/MultyCapture/MultyCapture selftest
+          QT_QPA_PLATFORM: offscreen   # Qt needs no real display
+        # xvfb provides a DISPLAY so pynput's X11 backend can import.
+        run: xvfb-run -a ./dist/MultyCapture/MultyCapture selftest
 
       - name: Derive version
         id: ver
