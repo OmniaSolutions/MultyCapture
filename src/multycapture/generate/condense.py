@@ -75,7 +75,19 @@ def _scroll_dir(event: Event) -> str:
     return "left"
 
 
-def condense(session: Session, events: list[Event]) -> list[Step]:
+def condense(
+    session: Session,
+    events: list[Event],
+    labels: Optional[dict[int, str]] = None,
+) -> list[Step]:
+    """Collapse the event stream into steps.
+
+    ``labels`` maps an event ``seq`` to the on-screen text that was clicked, as
+    read by :func:`.labels.read_labels`. Supplying it turns "Click." into
+    "Click “Save”." — the difference between an instruction a reader can follow
+    and one they can't. Instructions render without it just as before.
+    """
+    labels = labels or {}
     # Drop navigation-only keystrokes up front so surrounding runs merge cleanly.
     ev = [e for e in events if not _is_nav_key(e)]
     steps: list[Step] = []
@@ -116,7 +128,11 @@ def condense(session: Session, events: list[Event]) -> list[Step]:
                 j += 1
             rep = ev[i]  # first shot shows the target before the UI reacts
             cnt = j - i
-            steps.append(_mk(steps, rep, _click_text(btn.value, cnt, rep), cnt, ev[i:j]))
+            steps.append(_mk(
+                steps, rep,
+                _click_text(btn.value, cnt, rep, labels.get(rep.seq)),
+                cnt, ev[i:j],
+            ))
             i = j
 
         elif e.type == EventType.SCROLL:
@@ -135,26 +151,38 @@ def condense(session: Session, events: list[Event]) -> list[Step]:
     return steps
 
 
-def raw_steps(events: list[Event]) -> list[Step]:
+def raw_steps(
+    events: list[Event], labels: Optional[dict[int, str]] = None
+) -> list[Step]:
     """One Step per event, no merging — used when condensing is disabled."""
     from .steps import describe
+    labels = labels or {}
     out: list[Step] = []
     for idx, e in enumerate(events, start=1):
-        out.append(Step(index=idx, event=e, instruction=describe(e), count=1, seqs=[e.seq]))
+        out.append(Step(
+            index=idx, event=e,
+            instruction=describe(e, labels.get(e.seq)),
+            count=1, seqs=[e.seq],
+        ))
     return out
 
 
-def _click_text(button: str, cnt: int, rep: Event) -> str:
+def _click_text(
+    button: str, cnt: int, rep: Event, label: Optional[str] = None
+) -> str:
+    from .labels import quoted
+
+    target = quoted(label)  # what was clicked; empty when OCR found nothing
     in_app = _in_app(rep)
     if button == "left":
         if cnt == 2:
-            return f"Double-click{in_app}."
+            return f"Double-click{target}{in_app}."
         if cnt > 2:
-            return f"Click{in_app} ({cnt}×)."
-        return f"Click{in_app}."
+            return f"Click{target}{in_app} ({cnt}×)."
+        return f"Click{target}{in_app}."
     verb = {"right": "Right-click", "middle": "Middle-click"}.get(button, "Click")
     times = f" ({cnt}×)" if cnt > 1 else ""
-    return f"{verb}{in_app}{times}."
+    return f"{verb}{target}{in_app}{times}."
 
 
 def _mk(steps: list[Step], rep: Event, instruction: str, count: int, group: list[Event]) -> Step:

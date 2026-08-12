@@ -63,14 +63,18 @@ def pretty_combo(combo: str) -> str:
     return "+".join(_pretty_key(p) for p in combo.split("+") if p)
 
 
-def describe(event: Event) -> str:
-    """A single imperative instruction for one event."""
+def describe(event: Event, label: Optional[str] = None) -> str:
+    """A single imperative instruction for one event.
+
+    ``label`` is the on-screen text that was clicked, when OCR could read it.
+    """
     app = app_label(event.window)
     in_app = f" in “{app}”" if app else ""
+    target = f" “{label}”" if label else ""
 
     if event.type == EventType.CLICK:
         verb = _CLICK_VERB.get(event.detail.button.value, "Click")
-        return f"{verb}{in_app}."
+        return f"{verb}{target}{in_app}."
 
     if event.type == EventType.TYPE:
         return f"Type “{event.detail.text}”{in_app}."

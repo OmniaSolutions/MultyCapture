@@ -16,6 +16,7 @@ from ..capture import SessionReader
 from ..model import Event, Session
 from . import steps
 from .condense import Step, condense, raw_steps
+from .labels import read_labels
 from .annotate import prepare_for_doc
 
 # XML 1.0 forbids most C0 control chars (keep tab/newline/carriage-return).
@@ -49,6 +50,7 @@ def generate_docx(
     title: Optional[str] = None,
     annotate: bool = True,
     condense_steps: bool = True,
+    read_click_labels: bool = True,
     max_width: int = 1200,
     image_width_inches: float = 6.5,
 ) -> Path:
@@ -63,6 +65,11 @@ def generate_docx(
 
     By default the raw event stream is condensed into meaningful steps
     (:func:`condense`). Pass ``condense_steps=False`` for one step per event.
+
+    ``read_click_labels`` reads the on-screen text each click landed on, so
+    instructions name their target — "Click “Save”" rather than "Click".
+    It costs roughly a tenth of a second per click and needs tesseract
+    installed; without either it simply produces the unnamed wording.
     """
     from docx import Document
     from docx.shared import Inches, Pt, RGBColor
@@ -72,7 +79,17 @@ def generate_docx(
     reader = SessionReader(session_dir)
     session = reader.load_session()
     events = reader.events()
-    step_list = condense(session, events) if condense_steps else raw_steps(events)
+
+    # Read what each click landed on, so instructions can name it. Done here,
+    # at generation time, rather than while recording: reading an image per
+    # event costs about a tenth of a second, which a recorder cannot spend
+    # without dropping events.
+    label_map = read_labels(reader, session, events) if read_click_labels else {}
+
+    step_list = (
+        condense(session, events, label_map) if condense_steps
+        else raw_steps(events, label_map)
+    )
 
     if template:
         doc = Document(template)

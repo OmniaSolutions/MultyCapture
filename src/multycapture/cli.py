@@ -67,6 +67,7 @@ def _cmd_doc(args: argparse.Namespace) -> int:
         title=args.title,
         annotate=not args.no_annotate,
         condense_steps=not args.raw,
+        read_click_labels=not args.no_ocr,
         max_width=args.max_width,
     )
     size_mb = out.stat().st_size / (1024 * 1024)
@@ -135,6 +136,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doc.add_argument("--title", default=None, help="document title")
     doc.add_argument("--no-annotate", action="store_true", help="do not draw click highlights")
+    doc.add_argument(
+        "--no-ocr", action="store_true",
+        help="do not read the on-screen label each click landed on (faster)",
+    )
     doc.add_argument("--raw", action="store_true", help="one step per event (disable condensing)")
     doc.add_argument("--max-width", type=int, default=1200, help="max screenshot width in px (default: 1200)")
     doc.set_defaults(func=_cmd_doc)

@@ -61,6 +61,7 @@ Architecture: ${ARCH}
 Maintainer: ${MAINTAINER}
 Installed-Size: ${INSTALLED_KB}
 Depends: libxcb1, libxcb-cursor0, libxkbcommon-x11-0, libegl1, libglib2.0-0, libfontconfig1, libdbus-1-3
+Recommends: tesseract-ocr
 Description: Fast-track screencasts into step-by-step documentation
  MultyCapture records every mouse click and keystroke, each with a screenshot and
  the active window's context, then condenses that stream into numbered steps and
