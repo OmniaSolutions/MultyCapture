@@ -32,6 +32,14 @@ from multycapture.model import (  # noqa: E402
     Session, WindowInfo,
 )
 
+# Scratch HOME is not enough: QSettings stores under the registry on Windows
+# and under ~/Library/Preferences on macOS, neither of which follows HOME the
+# way the XDG backend does. Forcing plain ini files into the scratch directory
+# keeps a test run from touching real user settings on every platform. This has
+# to happen before the first QSettings instance exists.
+QSettings.setDefaultFormat(QSettings.IniFormat)
+QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _SCRATCH)
+
 SESSION_ID = "session_20260811_120000"
 
 
