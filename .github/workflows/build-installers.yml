@@ -76,7 +76,13 @@ jobs:
             libcairo2 libpango-1.0-0
 
       - name: Install app + build tools
-        run: pip install -e ".[build]"
+        run: pip install -e ".[build,test]"
+
+      # xvfb gives pynput's X11 backend a display to import against; Qt itself
+      # runs offscreen. Tests come before the freeze so a failure is reported
+      # against the source rather than a 60 MB bundle.
+      - name: Run tests
+        run: xvfb-run -a python -m pytest
 
       - name: Freeze with PyInstaller
         run: pyinstaller --noconfirm packaging/multycapture.spec

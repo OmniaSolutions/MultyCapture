@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multycapture"
-version = "0.1.1"
+version = "0.1.2"
 description = "Fast-track screencasts into step-by-step documentation by capturing every click and keystroke."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+test = ["pytest>=8"]
 
 [project.scripts]
 mc = "multycapture.cli:main"
@@ -29,3 +30,9 @@ mc-tray = "multycapture.gui.tray:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The GUI tests need a display for pynput's X11 backend to import; Qt itself
+# runs offscreen (see tests/conftest.py). Run them under xvfb-run on Linux.
+addopts = "-q"
