@@ -46,6 +46,10 @@ MIN_CONFIDENCE = 60
 # what a control label is.
 _PSM = "--psm 7"
 
+# Mode 6: "a uniform block of text". What a dialog or a panel is — reading one
+# with the single-line mode above returns the first line and drops the rest.
+_PSM_BLOCK = "--psm 6"
+
 _UPSCALE = 3
 
 
@@ -85,6 +89,26 @@ def label_at(
     return " ".join(words) if words else None
 
 
+def read_region(
+    image: "Image",
+    *,
+    min_confidence: int = MIN_CONFIDENCE,
+    max_words: int = 24,
+) -> Optional[str]:
+    """Read a whole region as a block of text — a dialog, a panel, a message.
+
+    Unlike :func:`label_at` this expects several lines, and caps the result:
+    a large region can hold a screenful of prose, and an instruction quoting
+    all of it helps nobody.
+    """
+    if not available():
+        return None
+    words = _read(image, min_confidence, psm=_PSM_BLOCK)
+    if not words:
+        return None
+    return " ".join(words[:max_words])
+
+
 def _crop_around(
     image: "Image", point: tuple[int, int], box: tuple[int, int]
 ) -> Optional["Image"]:
@@ -103,7 +127,7 @@ def _crop_around(
     return image.crop((left, top, right, bottom))
 
 
-def _read(crop: "Image", min_confidence: int) -> list[str]:
+def _read(crop: "Image", min_confidence: int, psm: str = _PSM) -> list[str]:
     """Grayscale, upscale, OCR, and keep only what scored well enough."""
     import pytesseract
     from PIL import Image as PILImage, ImageOps
@@ -113,7 +137,7 @@ def _read(crop: "Image", min_confidence: int) -> list[str]:
     )
     try:
         data = pytesseract.image_to_data(
-            prepared, config=_PSM, output_type=pytesseract.Output.DICT
+            prepared, config=psm, output_type=pytesseract.Output.DICT
         )
     except Exception:
         # A failed read is a missing label, not a failed document.

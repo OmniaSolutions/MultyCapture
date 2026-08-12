@@ -17,6 +17,7 @@ from ..model import Event, Session
 from . import steps
 from .condense import Step, condense, raw_steps
 from .labels import read_labels
+from .outcomes import read_outcomes
 from .annotate import prepare_for_doc
 
 # XML 1.0 forbids most C0 control chars (keep tab/newline/carriage-return).
@@ -51,6 +52,7 @@ def generate_docx(
     annotate: bool = True,
     condense_steps: bool = True,
     read_click_labels: bool = True,
+    describe_outcomes: bool = True,
     rewrite: Optional[Callable[[list[Step], dict[int, str]], None]] = None,
     max_width: int = 1200,
     image_width_inches: float = 6.5,
@@ -70,6 +72,10 @@ def generate_docx(
     ``rewrite`` is called with the finished steps and their labels before the
     document is written, to adjust the wording. It must not add, remove or
     reorder steps.
+
+    ``describe_outcomes`` compares each step's screenshot with the next one
+    and adds a sentence for what changed — "“Save changes?” appears." It needs
+    the same tesseract as the labels and costs about 20 ms a step on top.
 
     ``read_click_labels`` reads the on-screen text each click landed on, so
     instructions name their target — "Click “Save”" rather than "Click".
@@ -95,6 +101,10 @@ def generate_docx(
         condense(session, events, label_map) if condense_steps
         else raw_steps(events, label_map)
     )
+
+    # What each step caused, from the screenshots either side of it. After
+    # the steps exist, since it compares consecutive ones.
+    outcomes = read_outcomes(reader, session, step_list) if describe_outcomes else {}
 
     # Optional pass over the finished steps — this is where an AI rewording
     # plugs in. It may change wording and nothing else; the caller is
@@ -131,6 +141,13 @@ def generate_docx(
 
         instr = doc.add_paragraph()
         instr.add_run(_safe(step.instruction)).bold = True
+
+        outcome = outcomes.get(step.index)
+        if outcome:
+            said = doc.add_paragraph()
+            run = said.add_run(_safe(outcome))
+            run.italic = True
+            run.font.color.rgb = RGBColor(0x50, 0x50, 0x50)
 
         _add_screenshot(
             doc, reader, session, step.event,
