@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from .. import paths
 from ..capture import SessionReader
 from ..model import Event, Session
 from . import steps
@@ -26,6 +27,13 @@ def _safe(text: Optional[str]) -> str:
     return _INVALID_XML.sub("", text or "")
 
 
+def _has_content(doc) -> bool:
+    """Whether a template carries anything worth keeping on its own page."""
+    if doc.tables or doc.inline_shapes:
+        return True
+    return any(p.text.strip() for p in doc.paragraphs)
+
+
 def _fmt_when(iso: str) -> str:
     try:
         return datetime.datetime.fromisoformat(iso).strftime("%Y-%m-%d %H:%M")
@@ -37,6 +45,7 @@ def generate_docx(
     session_dir: str,
     out_path: Optional[str] = None,
     *,
+    template: Optional[str] = None,
     title: Optional[str] = None,
     annotate: bool = True,
     condense_steps: bool = True,
@@ -44,6 +53,13 @@ def generate_docx(
     image_width_inches: float = 6.5,
 ) -> Path:
     """Build a .docx for ``session_dir``; return the written path.
+
+    Without ``out_path`` the document is written to the user's documents
+    directory (see :mod:`..paths`), named after the session.
+
+    ``template`` is a .docx to build on. Its styles *and its content* carry
+    over — a cover page or preamble in the template stays, and the generated
+    steps are appended after it. Without one the document starts empty.
 
     By default the raw event stream is condensed into meaningful steps
     (:func:`condense`). Pass ``condense_steps=False`` for one step per event.
@@ -58,7 +74,15 @@ def generate_docx(
     events = reader.events()
     step_list = condense(session, events) if condense_steps else raw_steps(events)
 
-    doc = Document()
+    if template:
+        doc = Document(template)
+        # Start the generated part on its own page, but only when the template
+        # actually has something on the first one — otherwise an empty template
+        # would open with a blank page.
+        if _has_content(doc):
+            doc.add_page_break()
+    else:
+        doc = Document()
 
     # ---- title + metadata -------------------------------------------------
     doc.add_heading(_safe(title or "Captured Procedure"), level=0)
@@ -90,7 +114,9 @@ def generate_docx(
 
     # ---- output path ------------------------------------------------------
     if out_path is None:
-        out = reader.dir / f"{session.id}.docx"
+        # The user's Documents folder, not next to the capture: the capture
+        # lives in application data, which nobody browses to.
+        out = paths.documents_dir() / f"{session.id}.docx"
     else:
         out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)

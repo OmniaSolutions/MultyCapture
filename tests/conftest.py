@@ -26,6 +26,7 @@ from PIL import Image  # noqa: E402
 from PySide6.QtCore import QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from multycapture import paths  # noqa: E402
 from multycapture.capture.session_writer import SessionWriter  # noqa: E402
 from multycapture.model import (  # noqa: E402
     ClickDetail, Event, EventType, MouseAction, MouseButton, Point, Rect,
@@ -41,6 +42,20 @@ QSettings.setDefaultFormat(QSettings.IniFormat)
 QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _SCRATCH)
 
 SESSION_ID = "session_20260811_120000"
+
+
+@pytest.fixture(autouse=True)
+def documents_dir(monkeypatch, tmp_path) -> Path:
+    """Send generated documents to a scratch folder, on every platform.
+
+    The scratch HOME set above only redirects platformdirs on Linux. On Windows
+    it asks the shell for the real Documents folder and on macOS it resolves
+    ~/Library, so a test run there would drop .docx files in the developer's
+    actual Documents. Patch the lookup itself rather than the environment.
+    """
+    docs = tmp_path / "Documents" / "MultyCapture"
+    monkeypatch.setattr(paths, "documents_dir", lambda: docs)
+    return docs
 
 
 @pytest.fixture(scope="session")

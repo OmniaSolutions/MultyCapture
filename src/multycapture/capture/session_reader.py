@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 
+from .. import paths
 from ..model import Event, Session
 
 
@@ -44,9 +45,9 @@ class SessionReader:
         return self.dir / rel
 
     @staticmethod
-    def latest(root: str = "captures") -> "SessionReader":
+    def latest(root: Optional[str] = None) -> "SessionReader":
         """Return a reader for the most recent session under ``root``."""
-        root_path = Path(root)
+        root_path = Path(root) if root is not None else paths.captures_dir()
         candidates = sorted(
             (p for p in root_path.glob("session_*") if (p / "session.json").exists()),
             key=lambda p: p.name,

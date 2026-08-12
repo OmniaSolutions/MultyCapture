@@ -32,6 +32,7 @@ from typing import Optional
 
 from pynput import mouse, keyboard
 
+from .. import __version__, paths
 from ..model import (
     CaptureConfig, ClickDetail, Event, EventType, KeyboardMode, KeyDetail,
     MonitorInfo, MouseAction, MouseButton, Point, Rect, RelativePoint,
@@ -54,14 +55,16 @@ _BUTTON_MAP = {
 class Recorder:
     def __init__(
         self,
-        root: str = "captures",
+        root: Optional[str] = None,
         config: Optional[CaptureConfig] = None,
-        app_version: str = "0.1.0",
+        # Neither the CLI nor the tray passes this, so the default is what ends
+        # up in every session.json — it has to track the real version.
+        app_version: str = __version__,
         backend: Optional[PlatformBackend] = None,
         grabber: Optional[ScreenGrabber] = None,
         stop_combo: str = "ctrl+alt+q",
     ) -> None:
-        self.root = root
+        self.root = root if root is not None else str(paths.captures_dir())
         self.config = config or CaptureConfig()
         self.app_version = app_version
         self.backend = backend or get_backend()

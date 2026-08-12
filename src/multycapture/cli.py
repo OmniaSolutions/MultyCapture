@@ -5,8 +5,8 @@ Usage:
               [--keyboard consolidate|every_key|shortcuts_only] [--stop COMBO]
 
 ``mc record`` starts a global capture session and writes a session folder under
-``--out`` (default ``captures/``). Stop it with the stop hotkey (default
-Ctrl+Alt+Q) or Ctrl+C.
+``--out`` (default: the per-user captures directory, see :mod:`.paths`). Stop it
+with the stop hotkey (default Ctrl+Alt+Q) or Ctrl+C.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import paths
 from .model import CaptureConfig, KeyboardMode, ShotScope
 from .platform import PlatformError
 
@@ -62,6 +63,7 @@ def _cmd_doc(args: argparse.Namespace) -> int:
     out = generate_docx(
         session_dir,
         out_path=args.out,
+        template=args.template,
         title=args.title,
         annotate=not args.no_annotate,
         condense_steps=not args.raw,
@@ -99,7 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     rec = sub.add_parser("record", help="record a capture session")
-    rec.add_argument("--out", default="captures", help="output root dir (default: captures)")
+    rec.add_argument(
+        "--out", default=str(paths.captures_dir()),
+        help=f"output root dir (default: {paths.captures_dir()})",
+    )
     rec.add_argument(
         "--scope", default="monitor",
         choices=[s.value for s in ShotScope],
@@ -115,9 +120,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     doc = sub.add_parser("doc", help="generate a .docx from a captured session")
     doc.add_argument("session", nargs="?", help="session directory (default: latest)")
-    doc.add_argument("--root", default="captures", help="sessions root for --last (default: captures)")
+    doc.add_argument(
+        "--root", default=str(paths.captures_dir()),
+        help=f"sessions root for --last (default: {paths.captures_dir()})",
+    )
     doc.add_argument("--last", action="store_true", help="use the most recent session")
-    doc.add_argument("-o", "--out", default=None, help="output .docx path (default: alongside the session)")
+    doc.add_argument(
+        "-o", "--out", default=None,
+        help=f"output .docx path (default: under {paths.documents_dir()})",
+    )
+    doc.add_argument(
+        "--template", default=None,
+        help=f"start from this .docx (templates live in {paths.templates_dir()})",
+    )
     doc.add_argument("--title", default=None, help="document title")
     doc.add_argument("--no-annotate", action="store_true", help="do not draw click highlights")
     doc.add_argument("--raw", action="store_true", help="one step per event (disable condensing)")

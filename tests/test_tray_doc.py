@@ -10,6 +10,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog
 
+from multycapture import paths
+
 from conftest import SESSION_ID, wait_for_doc
 
 
@@ -60,16 +62,22 @@ def test_empty_recording_generates_nothing(tray, capture):
     assert tray._doc_thread is None
 
 
-def test_stop_generates_beside_the_capture_and_opens_it(tray, capture):
+def test_stop_generates_into_documents_and_opens_it(tray, capture):
+    """The automatic route writes to the user's documents folder.
+
+    Not beside the capture: captures live in application data, which is not a
+    place anyone browses to.
+    """
     _, session_dir = capture
     tray._maybe_auto_doc(str(session_dir), 2)
     assert tray._doc_thread is not None
     assert wait_for_doc(tray)
 
-    written = session_dir / f"{SESSION_ID}.docx"
+    written = paths.documents_dir() / f"{SESSION_ID}.docx"
     assert written.is_file()
     assert written.read_bytes()[:2] == b"PK"  # a .docx is a zip container
     assert tray.opened == [str(written)]
+    assert not (session_dir / f"{SESSION_ID}.docx").exists()
 
 
 # --------------------------------------------------------------------------- #
