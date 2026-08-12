@@ -25,6 +25,10 @@ dependencies = [
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
 test = ["pytest>=8"]
+# The AI backends need no client libraries — each is one JSON POST over the
+# standard library — so there is nothing to install for them. This extra buys
+# key storage in the OS keyring instead of a private file; see ai.credentials.
+keyring = ["keyring>=24"]
 
 [project.scripts]
 mc = "multycapture.cli:main"

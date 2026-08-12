@@ -38,8 +38,10 @@ from PySide6.QtWidgets import (
     QApplication, QFileDialog, QInputDialog, QMenu, QMessageBox, QSystemTrayIcon,
 )
 
-from .. import paths, templates
+from .. import ai, paths, templates
+from ..ai import credentials, providers
 from ..capture import Recorder, SessionReader
+from . import ai_dialog
 from .template_dialog import ask as ask_template
 
 # Preset start-delay choices (seconds) offered in the menu.
@@ -71,6 +73,13 @@ class TrayApp:
         # the user every time; the other two answer it in advance.
         self.template_mode = self.settings.value("template_mode", _ASK) or _ASK
         self.template_file: Optional[str] = self.settings.value("template_file") or None
+        # AI rewording: off unless asked for, since it sends the captured text
+        # somewhere unless the chosen backend is the local one.
+        self.ai_enabled = self.settings.value("ai_enabled", False, type=bool)
+        self.ai_provider = self.settings.value("ai_provider", providers.DEFAULT_ID)
+        self.ai_model = self.settings.value("ai_model", "") or ""
+        self.ai_base_url = self.settings.value("ai_base_url", "") or ""
+        self.ai_prompt = self.settings.value("ai_prompt", "") or ai.DEFAULT_PROMPT
         # remembered destination for "Generate .docx…" (None until first use)
         self._last_doc_dir: Optional[str] = self.settings.value("last_doc_dir") or None
 
@@ -81,6 +90,8 @@ class TrayApp:
         self._doc_thread: Optional[threading.Thread] = None
         # (succeeded, path-or-error, open-when-done), handed from worker to UI
         self._doc_result: Optional[tuple[bool, str, bool]] = None
+        # set by the rewrite pass when it could not do its job
+        self._ai_warning: Optional[str] = None
 
         self.tray = QSystemTrayIcon()
         self.tray.setIcon(self._icon(_IDLE))
@@ -151,6 +162,16 @@ class TrayApp:
         self.template_menu = self.menu.addMenu("Template")
         self.template_menu.aboutToShow.connect(self._rebuild_template_menu)
         self._rebuild_template_menu()
+
+        self.ai_menu = self.menu.addMenu("AI")
+        self.act_ai = QAction("Improve the wording", self.ai_menu, checkable=True)
+        self.act_ai.setChecked(self.ai_enabled)
+        self.act_ai.toggled.connect(self.set_ai_enabled)
+        self.ai_menu.addAction(self.act_ai)
+        self.act_ai_settings = QAction("Backend…", self.ai_menu)
+        self.act_ai_settings.triggered.connect(self._configure_ai)
+        self.ai_menu.addAction(self.act_ai_settings)
+        self._refresh_ai_title()
 
         self.act_open = QAction("Open captures folder", self.menu)
         self.act_open.triggered.connect(self._open_captures)
@@ -270,6 +291,103 @@ class TrayApp:
         webbrowser.open(paths.ensure(paths.templates_dir()).as_uri())
 
     # ------------------------------------------------------------------ #
+    # AI setting
+    # ------------------------------------------------------------------ #
+    def _refresh_ai_title(self) -> None:
+        label = next(
+            (lbl for pid, lbl, _ in providers.CATALOG if pid == self.ai_provider),
+            self.ai_provider,
+        )
+        self.ai_menu.setTitle(f"AI ({label})" if self.ai_enabled else "AI (off)")
+
+    def set_ai_enabled(self, on: bool) -> None:
+        self.ai_enabled = bool(on)
+        self.settings.setValue("ai_enabled", self.ai_enabled)
+        self._refresh_ai_title()
+
+    def _configure_ai(self) -> None:
+        dialog = ai_dialog.SettingsDialog(
+            self.ai_provider, self.ai_model, self.ai_base_url
+        )
+        if dialog.exec() != dialog.Accepted:
+            return
+        values = dialog.values()
+        self.ai_provider = values["provider"]
+        self.ai_model = values["model"]
+        self.ai_base_url = values["base_url"]
+        for key, value in (
+            ("ai_provider", self.ai_provider),
+            ("ai_model", self.ai_model),
+            ("ai_base_url", self.ai_base_url),
+        ):
+            self.settings.setValue(key, value)
+
+        # The key is the one thing that does not go into settings.
+        if values["api_key"]:
+            try:
+                credentials.store(self.ai_provider, values["api_key"])
+            except RuntimeError as exc:
+                self._notify("Could not store the key", str(exc),
+                             QSystemTrayIcon.Warning)
+        self._refresh_ai_title()
+
+    def _resolve_rewrite(self, session_dir: str):
+        """Build the rewording pass, asking the user to confirm the wording.
+
+        Returns ``(go ahead, callable or None)``. The dialog runs here, on the
+        UI thread, before any worker starts — a dialog cannot be opened from
+        the thread that generates the document.
+        """
+        if not self.ai_enabled:
+            return True, None
+
+        try:
+            reader = SessionReader(session_dir)
+            session = reader.load_session()
+            # Counting steps needs no screenshots, so this is cheap enough to
+            # do here just to tell the user how much is about to be sent.
+            from ..generate.condense import condense
+            step_count = len(condense(session, reader.events()))
+        except Exception:
+            step_count = 0
+
+        entry = next(
+            (e for e in providers.CATALOG if e[0] == self.ai_provider), None
+        )
+        label, local = (entry[1], entry[2]) if entry else (self.ai_provider, False)
+
+        proceed, instructions, remember = ai_dialog.ask(
+            self.ai_prompt, step_count, label, local
+        )
+        if not proceed:
+            return False, None
+        if remember:
+            self.ai_prompt = instructions
+            self.settings.setValue("ai_prompt", instructions)
+
+        provider = providers.build(
+            self.ai_provider,
+            model=self.ai_model or None,
+            api_key=credentials.get(self.ai_provider),
+            base_url=self.ai_base_url or None,
+        )
+
+        def rewrite(step_list, label_map) -> None:
+            # Never raises: a document with the original wording beats no
+            # document at all, so a failed or rejected rewrite is reported
+            # afterwards and the steps are left as they were.
+            try:
+                message = ai.compose(instructions, ai.as_json(step_list, label_map))
+                reply = provider.complete(message)
+                ai.apply(step_list, ai.parse(reply, [s.index for s in step_list]))
+            except (providers.ProviderError, ai.RewriteRejected) as exc:
+                self._ai_warning = str(exc)
+            except Exception as exc:  # unforeseen client-library failure
+                self._ai_warning = f"AI rewrite failed: {exc}"
+
+        return True, rewrite
+
+    # ------------------------------------------------------------------ #
     # recording lifecycle
     # ------------------------------------------------------------------ #
     def start_recording(self) -> None:
@@ -367,6 +485,10 @@ class TrayApp:
         if not proceed:
             return  # cancelled at the template step
 
+        proceed, rewrite = self._resolve_rewrite(str(session_dir))
+        if not proceed:
+            return  # cancelled at the wording step
+
         # Ask first, build second: the .docx is assembled straight into the
         # chosen folder rather than written somewhere else and moved.
         start_at = self._last_doc_dir or str(paths.ensure(paths.documents_dir()))
@@ -380,7 +502,7 @@ class TrayApp:
 
         # the session directory is named for the session id
         out = Path(folder) / f"{session_dir.name}.docx"
-        self._start_doc_job(str(session_dir), str(out), template)
+        self._start_doc_job(str(session_dir), str(out), template, rewrite)
 
     def _maybe_auto_doc(self, session_dir, count: int) -> None:
         """Generate and open a document for a just-finished recording."""
@@ -393,11 +515,14 @@ class TrayApp:
         proceed, template = self._resolve_template()
         if not proceed:
             return  # cancelled at the template step
-        self._start_doc_job(str(session_dir), None, template)
+        proceed, rewrite = self._resolve_rewrite(str(session_dir))
+        if not proceed:
+            return  # cancelled at the wording step
+        self._start_doc_job(str(session_dir), None, template, rewrite)
 
     def _start_doc_job(
         self, session_dir: str, out_path: Optional[str],
-        template: Optional[str] = None,
+        template: Optional[str] = None, rewrite=None,
     ) -> None:
         """Build a .docx on a worker thread.
 
@@ -411,7 +536,9 @@ class TrayApp:
         def worker():
             try:
                 from ..generate import generate_docx
-                out = generate_docx(session_dir, out_path, template=template)
+                out = generate_docx(
+                    session_dir, out_path, template=template, rewrite=rewrite
+                )
                 self._doc_result = (True, str(out), True)
             except Exception as exc:
                 self._doc_result = (False, str(exc), False)
@@ -425,7 +552,13 @@ class TrayApp:
         ok, payload, open_when_done = self._doc_result
         self._doc_result = None
         if ok:
-            self._notify("Document ready", payload)
+            warning, self._ai_warning = self._ai_warning, None
+            if warning:
+                # The document exists; only the rewording didn't happen.
+                self._notify("Document ready (original wording)", warning,
+                             QSystemTrayIcon.Warning)
+            else:
+                self._notify("Document ready", payload)
             if open_when_done:
                 self._open_in_editor(payload)
         else:

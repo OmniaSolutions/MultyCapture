@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .. import paths
 from ..capture import SessionReader
@@ -51,6 +51,7 @@ def generate_docx(
     annotate: bool = True,
     condense_steps: bool = True,
     read_click_labels: bool = True,
+    rewrite: Optional[Callable[[list[Step], dict[int, str]], None]] = None,
     max_width: int = 1200,
     image_width_inches: float = 6.5,
 ) -> Path:
@@ -65,6 +66,10 @@ def generate_docx(
 
     By default the raw event stream is condensed into meaningful steps
     (:func:`condense`). Pass ``condense_steps=False`` for one step per event.
+
+    ``rewrite`` is called with the finished steps and their labels before the
+    document is written, to adjust the wording. It must not add, remove or
+    reorder steps.
 
     ``read_click_labels`` reads the on-screen text each click landed on, so
     instructions name their target — "Click “Save”" rather than "Click".
@@ -90,6 +95,12 @@ def generate_docx(
         condense(session, events, label_map) if condense_steps
         else raw_steps(events, label_map)
     )
+
+    # Optional pass over the finished steps — this is where an AI rewording
+    # plugs in. It may change wording and nothing else; the caller is
+    # responsible for enforcing that (see multycapture.ai.payload).
+    if rewrite is not None:
+        rewrite(step_list, label_map)
 
     if template:
         doc = Document(template)

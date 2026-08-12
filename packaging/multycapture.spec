@@ -36,7 +36,17 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets"],
+    excludes=[
+        "tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
+        # The AI backends speak HTTP directly and need none of these. The
+        # excludes are insurance: PyInstaller follows imports inside functions,
+        # so a client library merely present on the build machine gets pulled
+        # in — measured at +16 MB for anthropic alone, dragging pydantic_core,
+        # jiter and its own copy of libssl into the installer. keyring is here
+        # because its backends are found through entry-point metadata that does
+        # not survive freezing; ai.credentials falls back to a private file.
+        "anthropic", "openai", "google.genai", "keyring",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
