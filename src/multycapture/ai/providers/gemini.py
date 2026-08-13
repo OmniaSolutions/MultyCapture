@@ -30,6 +30,8 @@ class GeminiProvider:
     id = "gemini"
     label = "Gemini (Google)"
     local = False
+    #: A hosted service is never local, whatever else changes.
+    is_local = False
 
     def __init__(self, model: str = DEFAULT_MODEL, api_key: Optional[str] = None) -> None:
         self.model = model

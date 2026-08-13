@@ -136,3 +136,42 @@ def test_no_sessions_is_reported_not_crashed(qapp, tmp_path, monkeypatch):
 
 def pytest_fail_if_called():
     raise AssertionError("should not have asked for a folder with no sessions")
+
+
+# --------------------------------------------------------------------------- #
+# notifications
+# --------------------------------------------------------------------------- #
+def test_the_tray_never_carries_the_popup_on_linux(tray, monkeypatch):
+    """Regression: this is what made the icon vanish.
+
+    showMessage under StatusNotifierItem flips the item to NeedsAttention and
+    the panel then draws dialog-information instead of the camera, for good.
+    """
+    import sys
+
+    from multycapture.gui import notify
+
+    shown: list = []
+    monkeypatch.setattr(tray.tray, "showMessage", lambda *a, **k: shown.append(a))
+    monkeypatch.setattr(notify.sys, "platform", "linux")
+    monkeypatch.setattr(notify, "send", lambda *a, **k: True)
+
+    tray._notify("Recording", "Starting in 5s")
+
+    assert shown == []
+    assert "Recording" in tray.tray.toolTip()
+
+
+def test_the_tooltip_carries_it_even_with_no_notifier(tray, monkeypatch):
+    """No gdbus, no notify-send: the words must still reach the user."""
+    from multycapture.gui import notify
+
+    shown: list = []
+    monkeypatch.setattr(tray.tray, "showMessage", lambda *a, **k: shown.append(a))
+    monkeypatch.setattr(notify.sys, "platform", "linux")
+    monkeypatch.setattr(notify, "send", lambda *a, **k: False)
+
+    tray._notify("Document ready", "/tmp/x.docx")
+
+    assert shown == []                      # still not through the tray
+    assert "Document ready" in tray.tray.toolTip()

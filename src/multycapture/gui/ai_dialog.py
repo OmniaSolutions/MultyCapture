@@ -156,3 +156,19 @@ class SettingsDialog(QDialog):
             "base_url": self.base_url.text().strip(),
             "api_key": self.api_key.text().strip(),
         }
+
+
+def ask_settings(
+    provider_id: str, model: str, base_url: str, parent=None
+) -> tuple[bool, dict]:
+    """Run the backend dialog. Returns ``(saved, values)``.
+
+    Wrapped like :func:`ask` so callers never touch a Qt enum: comparing
+    ``exec()`` against ``dialog.Accepted`` — on the instance rather than the
+    class — raises AttributeError under PySide6's enum handling, which is a
+    crash the type checker does not catch and only a real run reveals.
+    """
+    dialog = SettingsDialog(provider_id, model, base_url, parent)
+    if dialog.exec() != QDialog.Accepted:
+        return False, {}
+    return True, dialog.values()

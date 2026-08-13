@@ -254,3 +254,33 @@ def test_non_json_reply_is_reported_as_such(server):
     # empty-completion guard is what protects the document.
     with pytest.raises(ProviderError, match="empty reply"):
         http.first_text("", "Test")
+
+
+# --------------------------------------------------------------------------- #
+# "local" is about the configured host, not the label
+# --------------------------------------------------------------------------- #
+def test_ollama_on_this_machine_is_local():
+    for host in ("http://localhost:11434", "http://127.0.0.1:11434",
+                 "HTTP://LocalHost:11434"):
+        assert OllamaProvider(host=host).is_local is True
+
+
+def test_ollama_on_another_machine_is_not_local():
+    """The confirmation dialog must not promise the text stays put.
+
+    Running Ollama on another box is common; saying "stays on this machine"
+    there is a false statement in the one dialog whose job is to let the user
+    decide whether to send it.
+    """
+    for host in ("http://192.168.99.21:11434", "http://ollama.lan:11434"):
+        assert OllamaProvider(host=host).is_local is False
+
+
+def test_hosted_backends_are_never_local():
+    assert ClaudeProvider(api_key="k").is_local is False
+    assert GeminiProvider(api_key="k").is_local is False
+    assert OpenAICompatibleProvider(api_key="k").is_local is False
+
+
+def test_an_openai_compatible_server_on_this_machine_is_local():
+    assert OpenAICompatibleProvider(base_url="http://localhost:1234/v1").is_local is True

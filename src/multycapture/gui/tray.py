@@ -3,7 +3,7 @@
 A tray icon drives recording: Start (after a configurable countdown), Stop, choose
 the start delay, generate a .docx, and quit. The icon colour reflects state — idle
 (blue), counting down (amber, with the seconds remaining drawn on it), and
-recording (red).
+recording (red) — the application's camera mark, tinted; see .tray_icon.
 
 Two routes produce a document, both opening it in the system's default editor
 when it is done:
@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, QSettings
-from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QInputDialog, QMenu, QMessageBox, QSystemTrayIcon,
 )
@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 from .. import ai, paths, templates
 from ..ai import credentials, providers
 from ..capture import Recorder, SessionReader
-from . import ai_dialog
+from . import ai_dialog, notify, tray_icon
 from .template_dialog import ask as ask_template
 
 # Preset start-delay choices (seconds) offered in the menu.
@@ -306,12 +306,11 @@ class TrayApp:
         self._refresh_ai_title()
 
     def _configure_ai(self) -> None:
-        dialog = ai_dialog.SettingsDialog(
+        saved, values = ai_dialog.ask_settings(
             self.ai_provider, self.ai_model, self.ai_base_url
         )
-        if dialog.exec() != dialog.Accepted:
+        if not saved:
             return
-        values = dialog.values()
         self.ai_provider = values["provider"]
         self.ai_model = values["model"]
         self.ai_base_url = values["base_url"]
@@ -351,10 +350,21 @@ class TrayApp:
         except Exception:
             step_count = 0
 
+        # Built before the dialog, because only the configured instance knows
+        # whether the text actually stays on this machine: Ollama pointed at
+        # another box on the network is not local, whatever the menu says.
+        provider = providers.build(
+            self.ai_provider,
+            model=self.ai_model or None,
+            api_key=credentials.get(self.ai_provider),
+            base_url=self.ai_base_url or None,
+        )
+
         entry = next(
             (e for e in providers.CATALOG if e[0] == self.ai_provider), None
         )
-        label, local = (entry[1], entry[2]) if entry else (self.ai_provider, False)
+        label = entry[1] if entry else self.ai_provider
+        local = bool(getattr(provider, "is_local", False))
 
         proceed, instructions, remember = ai_dialog.ask(
             self.ai_prompt, step_count, label, local
@@ -364,13 +374,6 @@ class TrayApp:
         if remember:
             self.ai_prompt = instructions
             self.settings.setValue("ai_prompt", instructions)
-
-        provider = providers.build(
-            self.ai_provider,
-            model=self.ai_model or None,
-            api_key=credentials.get(self.ai_provider),
-            base_url=self.ai_base_url or None,
-        )
 
         def rewrite(step_list, label_map) -> None:
             # Never raises: a document with the original wording beats no
@@ -602,12 +605,22 @@ class TrayApp:
         QApplication.instance().quit()
 
     def _notify(self, title: str, msg: str, icon=QSystemTrayIcon.Information) -> None:
-        if QSystemTrayIcon.supportsMessages():
-            self.tray.showMessage(title, msg, icon, 4000)
+        """Say something, without costing the icon.
+
+        The tooltip always carries it. The popup goes through the notification
+        service directly on Linux: routing it through the tray icon there puts
+        the item into NeedsAttention and the panel replaces our mark with
+        ``dialog-information`` permanently. See :mod:`.notify`.
+        """
         self.tray.setToolTip(f"{title} — {msg}")
 
+        if notify.send(title, msg):
+            return
+        if notify.uses_tray_message() and QSystemTrayIcon.supportsMessages():
+            self.tray.showMessage(title, msg, icon, 4000)
+
     # ------------------------------------------------------------------ #
-    # icons (drawn, no asset files needed)
+    # icons (drawn per state — see .tray_icon)
     # ------------------------------------------------------------------ #
     def _update_countdown_icon(self) -> None:
         self.tray.setIcon(self._icon(_COUNTDOWN, text=str(self._remaining)))
@@ -615,22 +628,12 @@ class TrayApp:
 
     @staticmethod
     def _icon(color: str, text: Optional[str] = None) -> QIcon:
-        pm = QPixmap(64, 64)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(color))
-        p.drawEllipse(6, 6, 52, 52)
-        if text:
-            p.setPen(QPen(QColor("white")))
-            f = QFont()
-            f.setPixelSize(34)
-            f.setBold(True)
-            p.setFont(f)
-            p.drawText(pm.rect(), Qt.AlignCenter, text)
-        p.end()
-        return QIcon(pm)
+        """The camera mark tinted for the current state.
+
+        Idle is blue, counting down amber with the seconds in the lens, and
+        recording red — so the state reads at a glance without a tooltip.
+        """
+        return tray_icon.build(color, text)
 
 
 def main() -> int:

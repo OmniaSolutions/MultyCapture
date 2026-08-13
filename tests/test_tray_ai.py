@@ -39,6 +39,8 @@ def fake_model(monkeypatch):
 
     class Fake:
         id, label, local = "ollama", "Ollama (local)", True
+        # What the dialog actually reads: the configured host, not the label.
+        is_local = True
 
         def __init__(self, *a, **k):
             pass
@@ -239,6 +241,7 @@ def test_no_screenshots_are_ever_sent(tray, capture, prompt, fake_model, tmp_pat
 
     class Recorder:
         id, label, local = "ollama", "Ollama", True
+        is_local = True
         model = "test"
 
         def complete(self, message):
@@ -257,3 +260,55 @@ def test_no_screenshots_are_ever_sent(tray, capture, prompt, fake_model, tmp_pat
     assert ".png" not in message
     assert "shots/" not in message
     assert "screenshot" not in message
+
+
+# --------------------------------------------------------------------------- #
+# the backend dialog
+# --------------------------------------------------------------------------- #
+def test_saving_the_backend_dialog_stores_the_choice(tray, monkeypatch):
+    """Regression: this path used to raise before saving anything.
+
+    Comparing exec() against ``dialog.Accepted`` — the enum read off the
+    instance rather than the class — is an AttributeError under PySide6, so
+    opening the dialog crashed and no setting was ever kept.
+    """
+    monkeypatch.setattr(
+        ai_dialog, "ask_settings",
+        lambda *a, **k: (True, {
+            "provider": "ollama", "model": "qwen2.5:7b",
+            "base_url": "http://192.168.99.21:11434", "api_key": "",
+        }),
+    )
+    tray._configure_ai()
+
+    assert tray.ai_model == "qwen2.5:7b"
+    assert tray.ai_base_url == "http://192.168.99.21:11434"
+    tray.settings.sync()
+
+    from PySide6.QtCore import QSettings
+    stored = QSettings("MultyCapture", "MultyCapture")
+    assert stored.value("ai_base_url") == "http://192.168.99.21:11434"
+
+
+def test_cancelling_the_backend_dialog_changes_nothing(tray, monkeypatch):
+    before = (tray.ai_provider, tray.ai_model, tray.ai_base_url)
+    monkeypatch.setattr(ai_dialog, "ask_settings", lambda *a, **k: (False, {}))
+    tray._configure_ai()
+    assert (tray.ai_provider, tray.ai_model, tray.ai_base_url) == before
+
+
+def test_the_dialog_wrapper_compares_against_the_class_enum(qapp, monkeypatch):
+    """Exercise the real wrapper, since that is where the crash lived."""
+    from PySide6.QtWidgets import QDialog
+
+    monkeypatch.setattr(
+        ai_dialog.SettingsDialog, "exec", lambda self: QDialog.Accepted
+    )
+    saved, values = ai_dialog.ask_settings("ollama", "m", "http://h:11434")
+    assert saved is True
+    assert values["model"] == "m"
+
+    monkeypatch.setattr(
+        ai_dialog.SettingsDialog, "exec", lambda self: QDialog.Rejected
+    )
+    assert ai_dialog.ask_settings("ollama", "m", "")[0] is False

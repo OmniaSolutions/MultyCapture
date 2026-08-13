@@ -263,7 +263,7 @@ class Recorder:
                 KeyDetail(
                     key=self._key_name(key),
                     modifiers=self._ordered_mods(),
-                    combo=combo,
+                    combo=self._combo_for(key),
                 ),
                 self._cursor_point(),
             )

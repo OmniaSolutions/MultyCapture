@@ -35,8 +35,18 @@ class Provider(Protocol):
     id: str
     #: Name shown in the menu.
     label: str
-    #: Whether the request leaves this machine.
+    #: What the menu says before anything is configured.
     local: bool
+
+    @property
+    def is_local(self) -> bool:
+        """Whether *this* instance keeps the text on this machine.
+
+        Distinct from ``local``: the class-level flag is a label, this is the
+        truth about the configured host, and it is the one the confirmation
+        dialog must use.
+        """
+        ...
 
     def complete(self, message: str) -> str:
         """Send ``message``, return the reply text.

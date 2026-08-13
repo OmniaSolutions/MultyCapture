@@ -31,6 +31,7 @@ CONTEXT_TOKENS = 8192
 class OllamaProvider:
     id = "ollama"
     label = "Ollama (local)"
+    #: What the menu says before a host is configured — the default is local.
     local = True
 
     def __init__(
@@ -42,6 +43,18 @@ class OllamaProvider:
         self.model = model
         self.host = host.rstrip("/")
         self.timeout = timeout
+
+    @property
+    def is_local(self) -> bool:
+        """Whether *this* instance really keeps the text on this machine.
+
+        Ollama is commonly run on another box on the network. Reporting the
+        class default in that case would tell the user their captured text
+        stays put while it is being sent to a server — in the very dialog
+        whose job is to let them decide.
+        """
+        host = self.host.lower()
+        return "//localhost" in host or "//127.0.0.1" in host or "//[::1]" in host
 
     def complete(self, message: str) -> str:
         try:
