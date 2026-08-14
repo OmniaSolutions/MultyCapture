@@ -1,3 +1,5 @@
 """MultyCapture — capture screen activity into a documentable event stream."""
 
-__version__ = "0.1.2"
+from ._version import VERSION as __version__
+
+__all__ = ["__version__"]

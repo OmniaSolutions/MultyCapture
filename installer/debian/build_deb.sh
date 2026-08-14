@@ -7,15 +7,20 @@
 #   - dist/MultyCapture/ produced by:  pyinstaller --noconfirm packaging/multycapture.spec
 #
 # Usage:
-#   VERSION=0.1.0 ARCH=amd64 bash installer/debian/build_deb.sh
+#   ARCH=amd64 bash installer/debian/build_deb.sh
+#
+# The version comes from the application itself. VERSION= still overrides it
+# for a one-off build, but the default is no longer a literal that drifts:
+# it used to be 0.1.0 here, 0.1.0 in the .iss and whatever was typed on the
+# command line, which is how a 0.1.10 package came to contain a 0.1.2 app.
 #
 set -euo pipefail
 
-VERSION="${VERSION:-0.1.0}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+VERSION="${VERSION:-$(sh "$HERE/../version.sh")}"
 ARCH="${ARCH:-amd64}"
 MAINTAINER="${MAINTAINER:-MultyCapture <noreply@example.com>}"
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 DIST="$ROOT/dist/MultyCapture"
 PKG="$HERE/pkgroot"

@@ -1,9 +1,14 @@
 ; Inno Setup script for MultyCapture
-; Build:  iscc /DMyAppVersion=0.1.0 installer\windows\multycapture.iss
+; Build:  iscc /DMyAppVersion=%VERSION% installer\windows\multycapture.iss
+;   where  VERSION=$(sh installer/version.sh)
 ; Expects the PyInstaller one-folder bundle at dist\MultyCapture\ (repo root).
 
+; No default. The preprocessor cannot read multycapture.__version__, so the
+; only honest options are to be told the version or to refuse to build — and a
+; literal here is exactly what let an installer label itself 0.1.0 while the
+; application inside it reported something else.
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #error Pass /DMyAppVersion=x.y.z — take the number from: sh installer/version.sh
 #endif
 #define MyAppName "MultyCapture"
 #define MyAppPublisher "MultyCapture"

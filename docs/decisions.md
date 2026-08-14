@@ -603,6 +603,45 @@ including every string the user typed while recording.
 
 ---
 
+## 2026-08-14 — One file holds the version, and a tag that disagrees fails the build
+
+**Decision.** `src/multycapture/_version.py` contains `VERSION = "…"` and
+nothing else. `__init__.py` re-exports it, `pyproject.toml` declares the version
+dynamically from it, `installer/version.sh` reads it with sed, and
+`.github/derive-version.sh` fails a tagged build whose tag does not match it.
+The number moved to 0.2.0.
+
+**Rationale.** Five places held a version and three defaulted to the literal
+`0.1.0`, so they drifted in silence: the `.deb` under test was labelled 0.1.10
+while the application inside it stamped `app_version: "0.1.2"` into every
+`session.json`. Every recording made in the last few days is labelled with a
+version that never existed, and nothing in the build could have noticed.
+
+A tag is a claim about what is in the artefact, and nothing enforced it.
+Bumping is a one-line edit made weeks after the code was written, which is
+exactly the kind of omission CI should catch rather than a human.
+
+**Alternatives rejected.**
+
+- *A plain `VERSION.txt`.* Easiest of all to read from a shell, and it breaks
+  the shipped application: PyInstaller follows imports, not data files, so the
+  file would have to be listed in the spec and would be missing from the frozen
+  build the first time someone forgot. A Python module is followed
+  automatically.
+- *Keeping the string in `__init__.py`.* Works, and puts the sed match in a
+  file that has every reason to grow imports later. A file with one job cannot.
+- *Deriving the version from the git tag alone.* Leaves a working tree with no
+  version at all, and the application needs one at runtime to stamp recordings.
+- *Letting a mismatched tag through with a warning.* A warning in a CI log is
+  read after the release, not before it.
+
+**Found while doing this.** The old CI step read `${GITHUB_REF_NAME#v}`, which
+is the *branch* name outside a tag build, so every branch build produced a
+Windows installer versioned `main` — and the `|| '0.1.0'` fallback could never
+fire, because `main` is not an empty string.
+
+---
+
 ## 2026-08-14 — A dry run against the configured backend, in the settings dialog
 
 **Decision.** **Test this backend** sends two invented steps through the real

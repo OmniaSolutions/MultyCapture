@@ -36,10 +36,10 @@ jobs:
       - name: Derive version
         id: ver
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: bash .github/derive-version.sh
 
       - name: Build installer
-        run: iscc /DMyAppVersion=${{ steps.ver.outputs.version || '0.1.0' }} installer\windows\multycapture.iss
+        run: iscc /DMyAppVersion=${{ steps.ver.outputs.version }} installer\windows\multycapture.iss
 
       - uses: actions/upload-artifact@v4
         with:
@@ -100,11 +100,11 @@ jobs:
 
       - name: Derive version
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: bash .github/derive-version.sh
 
       - name: Build .deb
         env:
-          VERSION: ${{ steps.ver.outputs.version || '0.1.0' }}
+          VERSION: ${{ steps.ver.outputs.version }}
           ARCH: amd64
         run: bash installer/debian/build_deb.sh
 
