@@ -59,6 +59,11 @@ class OpenAICompatibleProvider:
         """A base URL on this machine means nothing leaves it."""
         return "localhost" in self.base_url or "127.0.0.1" in self.base_url
 
+    @property
+    def needs_key(self) -> bool:
+        """A server on this machine takes any token; a hosted one does not."""
+        return not self.is_local
+
     def complete(self, message: str) -> str:
         # Local servers accept any token, but still expect the header.
         key = self.api_key or ("local" if self.is_local else None)

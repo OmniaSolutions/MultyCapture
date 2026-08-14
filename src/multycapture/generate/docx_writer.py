@@ -36,6 +36,44 @@ def _has_content(doc) -> bool:
     return any(p.text.strip() for p in doc.paragraphs)
 
 
+def _heading(doc, text: str, level: int, Pt):
+    """A heading that survives a template without heading styles.
+
+    ``add_heading`` looks up "Title" or "Heading N" by name and raises KeyError
+    when the template has neither — which is common, because a company template
+    is usually built from a cleaned-up document and Word drops styles nothing
+    uses. One such template carried only Body Text, Caption, Footer, Header,
+    Heading, Index, List and Normal, and every generation against it failed.
+
+    Where the style exists it is used, so the document inherits the template's
+    own look and stays navigable. Where it does not, the text is formatted
+    directly: visibly a heading, and no styles injected into someone else's
+    template.
+
+    The style is checked *before* writing, not by catching the failure after:
+    ``add_heading`` inserts the paragraph and only then applies the style, so a
+    KeyError leaves the paragraph behind and the fallback produces every
+    heading twice.
+    """
+    style = "Title" if level == 0 else f"Heading {level}"
+    if _has_style(doc, style):
+        return doc.add_heading(text, level=level)
+
+    paragraph = doc.add_paragraph()
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.size = Pt(24 if level == 0 else 14)
+    return paragraph
+
+
+def _has_style(doc, name: str) -> bool:
+    try:
+        doc.styles[name]
+        return True
+    except KeyError:
+        return False
+
+
 def _fmt_when(iso: str) -> str:
     try:
         return datetime.datetime.fromisoformat(iso).strftime("%Y-%m-%d %H:%M")
@@ -123,13 +161,14 @@ def generate_docx(
         doc = Document()
 
     # ---- title + metadata -------------------------------------------------
-    doc.add_heading(_safe(title or "Captured Procedure"), level=0)
+    _heading(doc, _safe(title or "Captured Procedure"), 0, Pt)
+    # How long the procedure is, and when it was captured — enough for a reader
+    # to judge whether it still matches what they see. How the steps were
+    # arrived at, and which kernel recorded them, are ours and not theirs.
     meta = doc.add_paragraph()
-    detail = f"{len(step_list)} steps"
-    if condense_steps:
-        detail += f" (condensed from {len(events)} events)"
+    count = f"{len(step_list)} step" if len(step_list) == 1 else f"{len(step_list)} steps"
     meta_run = meta.add_run(
-        _safe(f"{detail} · captured {_fmt_when(session.created_at)} · {session.os}")
+        _safe(f"{count} · captured {_fmt_when(session.created_at)}")
     )
     meta_run.italic = True
     meta_run.font.size = Pt(9)
@@ -137,7 +176,7 @@ def generate_docx(
 
     # ---- steps ------------------------------------------------------------
     for step in step_list:
-        doc.add_heading(f"Step {step.index}", level=2)
+        _heading(doc, f"Step {step.index}", 2, Pt)
 
         instr = doc.add_paragraph()
         instr.add_run(_safe(step.instruction)).bold = True
@@ -200,13 +239,14 @@ def _add_screenshot(
     para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     para.add_run().add_picture(buf, width=Inches(width_inches))
 
-    # caption: app + relative time
+    # Caption: where the reader is looking. Not the elapsed time — "t+12.3s"
+    # is measured from the start of a recording the reader never saw.
     app = _safe(steps.app_label(event.window))
+    if not app:
+        return
     caption = doc.add_paragraph()
     caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    crun = caption.add_run(
-        f"{app}  ·  t+{event.t:.1f}s" if app else f"t+{event.t:.1f}s"
-    )
+    crun = caption.add_run(app)
     crun.italic = True
     crun.font.size = Pt(8)
     crun.font.color.rgb = RGBColor(0x80, 0x80, 0x80)

@@ -17,10 +17,17 @@ Reply::
 from __future__ import annotations
 
 from .base import ProviderError
-from .http import DEFAULT_TIMEOUT, first_text, post_json
+from .http import first_text, post_json
 
 DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3.1"
+
+# A self-hosted model is as fast as the machine under it, and that machine is
+# often a spare box without a GPU. One measured at 0.66 prompt tokens a second:
+# a procedure of a dozen steps is around 700 tokens of request, so twenty
+# minutes before it even starts answering. The cloud backends keep the shorter
+# default; here the wait is the normal case rather than a symptom.
+TIMEOUT = 3600.0
 
 # Ollama defaults to a small context window. A long procedure overflows it
 # silently and the model then answers about the part it can still see, which
@@ -33,12 +40,14 @@ class OllamaProvider:
     label = "Ollama (local)"
     #: What the menu says before a host is configured — the default is local.
     local = True
+    #: Ollama authenticates nothing, wherever it runs.
+    needs_key = False
 
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
         host: str = DEFAULT_HOST,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float = TIMEOUT,
     ) -> None:
         self.model = model
         self.host = host.rstrip("/")

@@ -38,8 +38,9 @@ from PySide6.QtWidgets import (
     QApplication, QFileDialog, QInputDialog, QMenu, QMessageBox, QSystemTrayIcon,
 )
 
-from .. import ai, paths, templates
+from .. import ai, logs, paths, templates
 from ..ai import credentials, providers
+from ..ai import rewrite as ai_rewrite
 from ..capture import Recorder, SessionReader
 from . import ai_dialog, notify, tray_icon
 from .template_dialog import ask as ask_template
@@ -171,6 +172,11 @@ class TrayApp:
         self.act_ai_settings = QAction("Backend…", self.ai_menu)
         self.act_ai_settings.triggered.connect(self._configure_ai)
         self.ai_menu.addAction(self.act_ai_settings)
+
+        self.menu.addSeparator()
+        self.act_log = QAction("Open log", self.menu)
+        self.act_log.triggered.connect(self._open_log)
+        self.menu.addAction(self.act_log)
         self._refresh_ai_title()
 
         self.act_open = QAction("Open captures folder", self.menu)
@@ -290,6 +296,14 @@ class TrayApp:
     def _open_templates(self) -> None:
         webbrowser.open(paths.ensure(paths.templates_dir()).as_uri())
 
+    def _open_log(self) -> None:
+        """Show the log, which is where a failed rewrite left its reply."""
+        target = logs.log_file()
+        if not target.exists():
+            self._notify("No log yet", "Nothing has been written to it.")
+            return
+        self._open_in_editor(str(target))
+
     # ------------------------------------------------------------------ #
     # AI setting
     # ------------------------------------------------------------------ #
@@ -378,15 +392,15 @@ class TrayApp:
         def rewrite(step_list, label_map) -> None:
             # Never raises: a document with the original wording beats no
             # document at all, so a failed or rejected rewrite is reported
-            # afterwards and the steps are left as they were.
+            # afterwards and the steps are left as they were. What the model
+            # actually replied goes to the log — see multycapture.logs.
             try:
-                message = ai.compose(instructions, ai.as_json(step_list, label_map))
-                reply = provider.complete(message)
-                ai.apply(step_list, ai.parse(reply, [s.index for s in step_list]))
+                ai_rewrite.improve(provider, instructions, step_list, label_map)
             except (providers.ProviderError, ai.RewriteRejected) as exc:
-                self._ai_warning = str(exc)
-            except Exception as exc:  # unforeseen client-library failure
-                self._ai_warning = f"AI rewrite failed: {exc}"
+                self._ai_warning = f"{exc} (see the log)"
+            except Exception as exc:  # unforeseen failure
+                logs.get("ai").exception("rewrite failed unexpectedly")
+                self._ai_warning = f"AI rewrite failed: {exc} (see the log)"
 
         return True, rewrite
 

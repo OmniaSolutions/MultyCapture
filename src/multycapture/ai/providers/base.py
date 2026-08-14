@@ -39,6 +39,16 @@ class Provider(Protocol):
     local: bool
 
     @property
+    def needs_key(self) -> bool:
+        """Whether an API key has to be configured to reach this backend.
+
+        Distinct from :attr:`is_local`: a backend can send data off the machine
+        and still need no key, which is exactly what Ollama on another host
+        does.
+        """
+        ...
+
+    @property
     def is_local(self) -> bool:
         """Whether *this* instance keeps the text on this machine.
 

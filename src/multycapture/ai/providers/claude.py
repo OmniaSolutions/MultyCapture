@@ -44,6 +44,7 @@ class ClaudeProvider:
     local = False
     #: A hosted service is never local, whatever else changes.
     is_local = False
+    needs_key = True
 
     def __init__(self, model: str = DEFAULT_MODEL, api_key: Optional[str] = None) -> None:
         self.model = model

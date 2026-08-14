@@ -126,3 +126,74 @@ def test_template_styles_reach_the_document(capture, templates_folder, tmp_path)
 
     out = generate_docx(str(session_dir), str(tmp_path / "styled.docx"), template=str(tpl))
     assert "AcmeBody" in [s.name for s in Document(str(out)).styles]
+
+
+# --------------------------------------------------------------------------- #
+# templates that lack the styles python-docx expects
+# --------------------------------------------------------------------------- #
+def _template_without_headings(folder: Path, name: str = "Bare") -> Path:
+    """A template carrying no Title or Heading styles.
+
+    Not contrived: a company template is usually built from a cleaned-up
+    document, and Word drops styles nothing uses. One real one carried only
+    Body Text, Caption, Footer, Header, Heading, Index, List and Normal.
+    """
+    doc = Document()
+    doc.add_paragraph("ACME S.p.A.")
+    for style in ("Title", "Heading 1", "Heading 2", "Heading 3"):
+        try:
+            doc.styles[style].delete()
+        except KeyError:
+            pass
+    path = folder / f"{name}.docx"
+    doc.save(str(path))
+    return path
+
+
+def test_a_template_without_heading_styles_still_generates(
+    capture, templates_folder, tmp_path
+):
+    """This used to raise KeyError: no style with name 'Title'."""
+    _, session_dir = capture
+    tpl = _template_without_headings(templates_folder)
+
+    out = generate_docx(str(session_dir), str(tmp_path / "bare.docx"), template=str(tpl))
+
+    text = _text_of(out)
+    assert "Captured Procedure" in text
+    assert any(t.startswith("Step 1") for t in text)
+
+
+def test_headings_are_not_written_twice(capture, templates_folder, tmp_path):
+    """The first fix caught KeyError after the fact and duplicated every heading.
+
+    add_heading inserts the paragraph and only then applies the style, so the
+    failed paragraph stays in the document and the fallback adds a second.
+    """
+    _, session_dir = capture
+    tpl = _template_without_headings(templates_folder)
+
+    out = generate_docx(str(session_dir), str(tmp_path / "once.docx"), template=str(tpl))
+
+    text = _text_of(out)
+    assert text.count("Captured Procedure") == 1
+    assert len([t for t in text if t == "Step 1"]) == 1
+
+
+def test_a_template_with_heading_styles_uses_them(capture, templates_folder, tmp_path):
+    """Where the template has them, the document inherits its look."""
+    _, session_dir = capture
+    tpl = _write_template(templates_folder, "Full", "Copertina")  # keeps all styles
+
+    out = generate_docx(str(session_dir), str(tmp_path / "full.docx"), template=str(tpl))
+
+    styles = {p.text: p.style.name for p in Document(str(out)).paragraphs if p.text.strip()}
+    assert styles.get("Captured Procedure") == "Title"
+    assert styles.get("Step 1") == "Heading 2"
+
+
+def test_without_a_template_the_standard_styles_are_used(capture, tmp_path):
+    _, session_dir = capture
+    out = generate_docx(str(session_dir), str(tmp_path / "plain.docx"))
+    styles = {p.text: p.style.name for p in Document(str(out)).paragraphs if p.text.strip()}
+    assert styles.get("Captured Procedure") == "Title"

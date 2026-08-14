@@ -8,15 +8,17 @@ the one thing that could put something in the document that was never captured.
 
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
-    QLineEdit, QPlainTextEdit, QVBoxLayout,
+    QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
-from ..ai import credentials, providers
+from ..ai import check, credentials, providers
+from ..ai.prompt import DEFAULT as DEFAULT_PROMPT
 
 
 class PromptDialog(QDialog):
@@ -101,6 +103,8 @@ class SettingsDialog(QDialog):
 
         self.base_url = QLineEdit(base_url)
         self.base_url.setPlaceholderText("leave empty for the default")
+        # The note below depends on this field, so it follows every keystroke.
+        self.base_url.textChanged.connect(self._provider_changed)
         form.addRow("Server URL:", self.base_url)
 
         self.api_key = QLineEdit()
@@ -112,6 +116,17 @@ class SettingsDialog(QDialog):
         self.key_note.setWordWrap(True)
         form.addRow("", self.key_note)
 
+        # A dry run, because the alternative is discovering after twenty
+        # minutes that the model cannot produce the format.
+        self.test_button = QPushButton("Test this backend")
+        self.test_button.clicked.connect(self._start_test)
+        form.addRow("", self.test_button)
+
+        self.test_note = QLabel()
+        self.test_note.setWordWrap(True)
+        self.test_note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        form.addRow("", self.test_note)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self
         )
@@ -122,16 +137,29 @@ class SettingsDialog(QDialog):
         self._provider_changed()
 
     def _provider_changed(self) -> None:
-        """Reflect what the chosen backend actually needs."""
-        pid = self.selected_provider()
-        entry = next((e for e in providers.CATALOG if e[0] == pid), None)
-        is_local = bool(entry and entry[2])
+        """Reflect what the chosen backend actually needs.
 
-        self.api_key.setEnabled(not is_local)
+        "Local" is decided from the server URL as typed, not from the backend's
+        label: Ollama pointed at another machine on the network sends the
+        captured text there, and saying otherwise here — in the dialog where
+        that is chosen — would be a plain untruth.
+        """
+        pid = self.selected_provider()
+        probe = self._probe(pid)
+        is_local = bool(getattr(probe, "is_local", False))
+        needs_key = bool(getattr(probe, "needs_key", True))
+
+        self.api_key.setEnabled(needs_key)
         self.model.setPlaceholderText(providers.default_model(pid))
 
-        if is_local:
-            self.key_note.setText("Runs on this machine — no key, nothing sent out.")
+        # Two separate questions, and they do not move together: Ollama on
+        # another machine needs no key and still sends the text there.
+        if not needs_key:
+            where = (
+                "nothing leaves this machine"
+                if is_local else f"the captured text is sent to {self._host()}"
+            )
+            self.key_note.setText(f"No key needed — {where}.")
             return
 
         found = credentials.source(pid)
@@ -145,6 +173,79 @@ class SettingsDialog(QDialog):
                 "No system keyring here. The key will be saved to a file readable "
                 "only by you."
             )
+
+    # ------------------------------------------------------------------ #
+    # trying the backend out
+    # ------------------------------------------------------------------ #
+    def _start_test(self) -> None:
+        """Run the probe on a worker thread and poll for its answer.
+
+        Off the UI thread deliberately: a model on a CPU-only machine can take
+        minutes to answer, and a frozen dialog looks like a crash.
+        """
+        if getattr(self, "_test_thread", None) and self._test_thread.is_alive():
+            return
+
+        values = self.values()
+        try:
+            provider = providers.build(
+                values["provider"],
+                model=values["model"] or None,
+                api_key=values["api_key"] or credentials.get(values["provider"]),
+                base_url=values["base_url"] or None,
+            )
+        except Exception as exc:
+            self.test_note.setText(f"Cannot use this backend: {exc}")
+            return
+
+        self._test_result = None
+        self.test_button.setEnabled(False)
+        self.test_note.setText("Asking the model to answer a two-step example…")
+
+        def worker():
+            self._test_result = check.run(provider, DEFAULT_PROMPT)
+
+        self._test_thread = threading.Thread(target=worker, daemon=True)
+        self._test_thread.start()
+
+        self._test_timer = QTimer(self)
+        self._test_timer.setInterval(400)
+        self._test_timer.timeout.connect(self._poll_test)
+        self._test_timer.start()
+
+    def _poll_test(self) -> None:
+        if self._test_thread.is_alive():
+            return
+        self._test_timer.stop()
+        self.test_button.setEnabled(True)
+
+        result = self._test_result
+        if result is None:
+            self.test_note.setText("The test did not finish.")
+            return
+
+        headline = (
+            "Works" if result.ok
+            else ("Reached, but unusable" if result.reached else "Not reached")
+        )
+        lines = [f"<b>{headline}</b> — {result.detail}",
+                 check.advice(result)]
+        if result.reply:
+            lines.append(f"<i>It replied:</i> {result.reply}")
+        self.test_note.setText("<br>".join(lines))
+
+    def _probe(self, provider_id: str):
+        """A backend built from the fields as they stand, to ask it about itself."""
+        try:
+            return providers.build(
+                provider_id, base_url=self.base_url.text().strip() or None
+            )
+        except Exception:
+            return None
+
+    def _host(self) -> str:
+        """The server as typed, for saying plainly where the text goes."""
+        return self.base_url.text().strip() or "the configured server"
 
     def selected_provider(self) -> str:
         return self.provider.currentData()
