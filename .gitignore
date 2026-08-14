@@ -86,3 +86,10 @@ installer/windows/Output/
 installer/debian/pkgroot/
 installer/debian/out/
 *.deb
+
+# Installers built on the Windows VM and handed back through the shared folder
+dist-win/
+
+# VM name, account and password-file location for tools/win-vm/check.sh.
+# It may hold a password, so it must never be committed.
+tools/win-vm/vm.conf
