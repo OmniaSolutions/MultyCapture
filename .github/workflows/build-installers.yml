@@ -7,8 +7,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Read-only by default; only the release job is granted write, and only to
+# attach files to a Release. A build job that cannot write cannot be talked
+# into pushing anything.
 permissions:
-  contents: write   # needed to attach installers to a Release
+  contents: read
 
 jobs:
   # --------------------------------------------------------------------- #
@@ -22,7 +25,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install app + build tools
-        run: pip install -e ".[build]"
+        run: pip install -e ".[build,test]"
+
+      # Windows is where the suite is most worth running and was least run:
+      # QSettings lives in the registry here, not in a file, and the Documents
+      # folder can be redirected into OneDrive. Both are isolated by
+      # tests/conftest.py — which had only ever been exercised on Linux.
+      # No xvfb: Qt runs offscreen and pynput needs no display on Windows.
+      - name: Run tests
+        run: python -m pytest
 
       - name: Freeze with PyInstaller
         run: pyinstaller --noconfirm packaging/multycapture.spec
@@ -118,13 +129,38 @@ jobs:
     needs: [windows, linux]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the only job that needs it: attaching files to a Release
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Publish release with installers
         uses: softprops/action-gh-release@v2
         with:
+          # Without this a glob that matches nothing publishes a release with
+          # the file silently missing — and a release page offering Windows and
+          # Linux with only one of them on it is worse than a failed build.
+          fail_on_unmatched_files: true
           files: |
             artifacts/windows-installer/*.exe
             artifacts/debian-package/*.deb
+          body: |
+            Install the `.exe` on Windows, or the `.deb` on Debian/Ubuntu:
+
+            ```
+            sudo dpkg -i multycapture_*_amd64.deb
+            ```
+
+            **[User Guide](https://github.com/OmniaSolutions/MultyCapture/blob/main/docs/USER_GUIDE.md)** —
+            where your files go, what is optional, and the AI features.
+
+            Windows 10/11 and Linux under **Xorg**. Wayland cannot let one
+            application watch another's windows, so MultyCapture detects it and
+            refuses to start rather than recording something useless. macOS is
+            not supported.
+
+            Two optional extras: `tesseract-ocr` makes each step name what was
+            clicked, and an AI backend can improve the wording — off by default,
+            and nothing to install for it.
