@@ -1,76 +1,83 @@
 # MultyCapture
 
-Fast-track screencasts into step-by-step documentation. MultyCapture records
-every mouse click and keystroke — each with a screenshot and the active
-application's window context — into a compact, replayable event stream. That
-stream is the base layer from which screencasts and Markdown/HTML documentation
-are generated.
+Do something once; get a written procedure out of it.
 
-## Status
+MultyCapture records every mouse click and keystroke — each with a screenshot
+and the active window's context — and turns that into a numbered Word document
+with the screenshots in place:
 
-Early development (v0.1). The **capture engine** is implemented and working:
+> **Step 4**
+> Click "Save" in "Orders".
+> "Save changes?" appears.
 
-- Cross-platform capture layer (Windows via pure `ctypes`; Linux/X11 via
-  `python-xlib`). Wayland is detected and refused with instructions to switch to
-  an Xorg session.
-- Screenshot grabber behind a swappable interface (`mss` today; a Qt grabber can
-  be dropped in later).
-- Recorder with smart keyboard consolidation (typed text batched; shortcuts and
-  special keys kept discrete) and scroll coalescing.
-- Append-only, crash-safe session storage (`events.jsonl` + `shots/`).
+Both lines are written without any AI: the first from the recorded event, the
+second by comparing the screenshots either side of the step.
 
-See [docs/CAPTURE_SPEC.md](docs/CAPTURE_SPEC.md) for the full data & storage spec.
+**→ [User Guide](docs/USER_GUIDE.md)** — installing, where your files go, what
+is optional, and the AI features.
 
 ## Platform support
 
-| Platform      | Status                                             |
-|---------------|----------------------------------------------------|
-| Windows 10/11 | Supported (no extra system deps)                   |
-| Linux / X11   | Supported (`python-xlib`, `ewmh`)                  |
-| Linux/Wayland | Not supported — log into an Xorg/X11 session       |
+| Platform | Status |
+|---|---|
+| Windows 10/11 | Supported, no extra system dependencies |
+| Linux / X11 | Supported |
+| Linux / Wayland | Not supported — log into an Xorg session |
+
+Wayland does not let one application observe another's windows or read the
+pointer globally. MultyCapture detects it and refuses to start rather than
+recording something useless.
 
 ## Quick start
 
+Install the `.deb` or the Windows installer, then run **MultyCapture** — or
+from a source checkout:
+
 ```bash
 python -m venv .venv
-# Windows:  .\.venv\Scripts\Activate.ps1
-# Linux:    source .venv/bin/activate
+source .venv/bin/activate      # Windows: .\.venv\Scripts\Activate.ps1
 pip install -e .
-```
-
-### System tray (recommended)
-
-```bash
 mc tray
 ```
 
-Runs a PySide6 tray icon. Left-click (or the menu) to **Start** / **Stop**.
-Starting waits a configurable **start delay** (default 5s) so you can get to the
-right window first — the icon shows an amber countdown, then turns red while
-recording. Change the delay under **Start delay** in the menu (presets or
-*Custom…*); the choice is remembered.
-
-When a recording stops, the `.docx` is generated and opened in your default
-editor. Turn that off with **Generate .docx when recording stops** — the choice
-is remembered. **Generate .docx…** builds one on demand: it asks for a
-destination folder first, writes the document there, then opens it. The menu
-also opens the captures folder.
+Left-click the tray icon to start; **Ctrl+Alt+Q** stops. There is a 5-second
+start delay so you can get to the right window first. When you stop, the
+document is written to `Documents/MultyCapture` and opened.
 
 ### Command line
 
-Record a session (stop with Ctrl+Alt+Q or Ctrl+C):
+```bash
+mc record        # stop with Ctrl+Alt+Q or Ctrl+C
+mc doc --last    # build a document from the most recent recording
+```
+
+Full options in the [User Guide](docs/USER_GUIDE.md#command-line).
+
+## Optional extras
+
+- **`tesseract-ocr`** makes steps name what was clicked — `Click "Save"…`
+  rather than `Click in…`. Recommended by the `.deb`, not required; without it
+  nothing fails and the steps are simply less specific.
+- **An AI model** can improve the wording of the steps, and nothing else. Off
+  by default, because it can send your captured text off the machine. Nothing
+  needs installing for it: every backend (Ollama, Claude, OpenAI-compatible,
+  Gemini) is reached over plain HTTP.
+
+## Documentation
+
+| | |
+|---|---|
+| [USER_GUIDE.md](docs/USER_GUIDE.md) | How to use it, and what it does with your files |
+| [CAPTURE_SPEC.md](docs/CAPTURE_SPEC.md) | The event stream and storage format |
+| [decisions.md](docs/decisions.md) | Why it is built this way, and what was tried and dropped |
+
+## Development
 
 ```bash
-mc record
+pip install -e ".[test]"
+pytest                          # Linux: xvfb-run -a pytest
 ```
 
-Options:
-
-```
-mc record --out captures --scope monitor --keyboard consolidate --stop ctrl+alt+q
-```
-
-- `--scope`: `monitor` (default) | `window` | `virtual_desktop`
-- `--keyboard`: `consolidate` (default) | `every_key` | `shortcuts_only`
-
-Output lands in `captures/session_<timestamp>/`.
+The version lives in `src/multycapture/_version.py` and nowhere else; the
+packaging scripts read it with `installer/version.sh`, and CI refuses to build
+a tag that disagrees with it.
