@@ -27,12 +27,29 @@ jobs:
       - name: Install app + build tools
         run: pip install -e ".[build,test]"
 
+      # pytesseract is a Python dependency and comes with the install above;
+      # the binary it wraps does not, and without it 26 OCR tests skip. They
+      # had never run on Windows anywhere — this job went green with the whole
+      # OCR path unexecuted, which is exactly what MULTYCAPTURE_REQUIRE_OCR
+      # exists to prevent on Linux.
+      # The PATH line is not redundant: the package installs into Program Files
+      # and the current step's PATH is not inherited by the next one.
+      - name: Install tesseract
+        run: |
+          choco install tesseract -y --no-progress
+          echo "C:\Program Files\Tesseract-OCR" >> $env:GITHUB_PATH
+
       # Windows is where the suite is most worth running and was least run:
       # QSettings lives in the registry here, not in a file, and the Documents
       # folder can be redirected into OneDrive. Both are isolated by
       # tests/conftest.py — which had only ever been exercised on Linux.
       # No xvfb: Qt runs offscreen and pynput needs no display on Windows.
       - name: Run tests
+        # Same reason as the Linux job: make a lost tesseract go red instead of
+        # quietly green. Note this guards the binary only — the OCR tests also
+        # need a scalable font, and skip for its absence without tripping this.
+        env:
+          MULTYCAPTURE_REQUIRE_OCR: "1"
         run: python -m pytest
 
       - name: Freeze with PyInstaller
