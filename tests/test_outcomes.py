@@ -35,12 +35,17 @@ SIZE = (700, 500)
 
 
 def _font(size: int):
-    try:
-        return ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size
-        )
-    except OSError:
-        pytest.skip("no scalable font available")
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # Windows has no DejaVu; without this these tests skip for want of a
+        # font even when tesseract is installed.
+        r"C:\Windows\Fonts\arial.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    pytest.skip("no scalable font available")
 
 
 def _screen(with_dialog: bool = False, typed: str = "") -> Image.Image:

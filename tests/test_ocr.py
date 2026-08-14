@@ -30,6 +30,10 @@ def _font(size: int):
     for path in (
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        # Windows has neither, and without an entry here these tests skip for
+        # want of a font even when tesseract is installed — a second silent
+        # skip, behind the one MULTYCAPTURE_REQUIRE_OCR already guards.
+        r"C:\Windows\Fonts\arial.ttf",
     ):
         try:
             return ImageFont.truetype(path, size)

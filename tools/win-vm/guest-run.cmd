@@ -37,6 +37,22 @@ if not defined MC_VENV set "MC_VENV=%USERPROFILE%\mc-venv"
 if not defined MC_PYTHON set "MC_PYTHON=py -3.12"
 if not defined ISCC set "ISCC=C:\Program Files\Inno Setup 7\ISCC.exe"
 
+rem tesseract is not installed system-wide here: its installer demands
+rem elevation, and guestcontrol cannot answer a UAC prompt. An extracted copy
+rem in the profile works identically -- ocr.available() only ever runs the
+rem binary -- and needs no admin, no registry and no uninstaller.
+if not defined MC_TESSERACT set "MC_TESSERACT=%LOCALAPPDATA%\Tesseract-OCR"
+if exist "%MC_TESSERACT%\tesseract.exe" (
+  set "PATH=%MC_TESSERACT%;%PATH%"
+  rem Same reason as CI: without this, 26 OCR tests skip and the run still
+  rem reports success. Set only when the binary is actually here, so a machine
+  rem without it gets the warning below instead of a confusing hard failure.
+  set "MULTYCAPTURE_REQUIRE_OCR=1"
+) else (
+  echo WARNING: no tesseract at %MC_TESSERACT% -- 26 OCR tests will skip.
+  echo          Extract the UB-Mannheim installer there, or set MC_TESSERACT.
+)
+
 set "MODE=%~1"
 if not defined MODE set "MODE=test"
 shift

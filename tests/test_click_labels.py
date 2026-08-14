@@ -39,6 +39,7 @@ def _font(size: int):
     for path in (
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
     ):
         try:
             return ImageFont.truetype(path, size)
