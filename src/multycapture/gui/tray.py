@@ -45,6 +45,13 @@ from ..capture import Recorder, SessionReader
 from . import ai_dialog, notify, tray_icon
 from .template_dialog import ask as ask_template
 
+#: The user guide, on the web rather than the copy shipped beside the program.
+#:
+#: Pointed at ``main`` and not at the installed version's tag: a tag that has
+#: not been pushed yet gives every user of that build a 404, and being one
+#: release ahead is a far smaller problem than a help link that goes nowhere.
+DOCS_URL = "https://github.com/OmniaSolutions/MultyCapture/blob/main/docs/USER_GUIDE.md"
+
 # Preset start-delay choices (seconds) offered in the menu.
 _DELAY_PRESETS = [0, 3, 5, 10]
 _DEFAULT_DELAY = 5
@@ -182,6 +189,11 @@ class TrayApp:
         self.act_open = QAction("Open captures folder", self.menu)
         self.act_open.triggered.connect(self._open_captures)
         self.menu.addAction(self.act_open)
+
+        self.act_help = QAction("?", self.menu)
+        self.act_help.setToolTip(DOCS_URL)
+        self.act_help.triggered.connect(self._open_help)
+        self.menu.addAction(self.act_help)
 
         self.menu.addSeparator()
 
@@ -599,6 +611,23 @@ class TrayApp:
     # ------------------------------------------------------------------ #
     # misc
     # ------------------------------------------------------------------ #
+    def _open_help(self) -> None:
+        """Open the user guide in the browser.
+
+        The guide lives on the web rather than in the installed files: it is
+        the one document that has to be readable when the application will not
+        start — a Wayland session, a bundle that refuses to run — and a local
+        copy is no use then.
+        """
+        try:
+            opened = webbrowser.open(DOCS_URL)
+        except Exception:      # no browser, no DISPLAY, a broken BROWSER var
+            opened = False
+        if not opened:
+            # Not a failure worth an error icon: show the address so it can be
+            # typed or copied somewhere else.
+            self._notify("Documentation", DOCS_URL, QSystemTrayIcon.Warning)
+
     def _open_captures(self) -> None:
         path = Path(self.root).resolve()
         path.mkdir(parents=True, exist_ok=True)

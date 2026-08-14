@@ -244,6 +244,9 @@ kind of software is receiving it.
 Whatever you type is stored in your system keyring. If there is no keyring —
 common on a minimal Linux install, and inside the packaged Windows build — it
 goes to a file readable only by you, and the dialog tells you which happened.
+On Linux that file is created owner-only; on Windows it is inside your profile
+folder, which other accounts cannot read.
+
 **Keys are never written to the settings**, which are the registry on Windows
 and a plain text file on Linux.
 

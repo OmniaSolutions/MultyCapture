@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 import types
 
@@ -105,8 +107,18 @@ def test_storing_without_a_keyring_falls_back_to_a_file(monkeypatch, tmp_path):
 
     saved = tmp_path / "credentials.json"
     assert saved.is_file()
-    # Owner-only: the file is the fallback for the OS vault, not a plain note.
-    assert saved.stat().st_mode & 0o077 == 0
+
+    if os.name == "posix":
+        # Owner-only: the file is the fallback for the OS vault, not a plain note.
+        assert saved.stat().st_mode & 0o077 == 0
+    else:
+        # Windows has no POSIX mode bits — os.open's mode argument only decides
+        # the read-only flag, and everything reads back as 0o666. What keeps the
+        # file private there is the ACL on the user's profile, which
+        # %LOCALAPPDATA% sits inside; asserting st_mode would be asserting a
+        # property the platform does not have. Checked as far as the platform
+        # allows: the file exists and holds the key rather than nothing.
+        assert json.loads(saved.read_text(encoding="utf-8"))
 
 
 def test_the_fallback_file_can_be_cleared(monkeypatch, tmp_path):

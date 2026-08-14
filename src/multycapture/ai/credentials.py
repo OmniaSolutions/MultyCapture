@@ -56,7 +56,18 @@ def keyring_available() -> bool:
 
 
 def _file() -> Path:
-    """The fallback store: one JSON object, owner-readable only."""
+    """The fallback store: one JSON object, private to this account.
+
+    How that privacy is enforced differs, and it is worth being exact:
+
+    * **POSIX** — created with mode 0600, so no other account can read it.
+    * **Windows** — mode bits do not exist; ``os.open``'s mode argument only
+      decides the read-only flag, and the file reads back as 0o666. What keeps
+      it private is the ACL on the user's profile directory, which
+      ``%LOCALAPPDATA%`` is inside and which denies other standard users by
+      default. This is the same protection every application storing a token
+      under LOCALAPPDATA relies on, but it is inherited rather than set here.
+    """
     return paths.data_dir() / "credentials.json"
 
 
@@ -70,7 +81,8 @@ def _read_file() -> dict:
 def _write_file(data: dict) -> None:
     path = paths.ensure(paths.data_dir()) / "credentials.json"
     # Create with tight permissions before writing, not after: a world-readable
-    # moment is all it takes.
+    # moment is all it takes. On Windows the mode is ignored beyond the
+    # read-only flag — see _file() for what protects it there instead.
     handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
     with os.fdopen(handle, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
