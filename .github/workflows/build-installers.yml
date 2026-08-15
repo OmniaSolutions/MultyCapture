@@ -40,17 +40,27 @@ jobs:
       # a step's own PATH is not inherited by the next one.
       - name: Install tesseract
         run: |
-          choco install tesseract -y --no-progress
-          $roots = @(
-            "$env:ProgramFiles\Tesseract-OCR",
-            "${env:ProgramFiles(x86)}\Tesseract-OCR",
-            "$env:ChocolateyInstall\bin"
-          ) | Where-Object { $_ -and (Test-Path $_) }
-          $exe = Get-ChildItem -Path $roots -Filter tesseract.exe -ErrorAction SilentlyContinue |
-                 Select-Object -First 1
-          if (-not $exe) {
-            throw "choco reported success but no tesseract.exe under: $($roots -join ', ')"
+          # community.chocolatey.org returned a 499 mid-release and choco
+          # installed nothing. PowerShell does not abort on a native command's
+          # exit code and GitHub's pwsh wrapper only inspects the last one, so
+          # that failure passed silently and surfaced three steps later. Hence:
+          # retry the transient case, then verify rather than assume.
+          $exe = $null
+          foreach ($attempt in 1..3) {
+            choco install tesseract -y --no-progress
+            $roots = @(
+              "$env:ProgramFiles\Tesseract-OCR",
+              "${env:ProgramFiles(x86)}\Tesseract-OCR"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+            if ($roots) {
+              $exe = Get-ChildItem -Path $roots -Filter tesseract.exe -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+            }
+            if ($exe) { break }
+            Write-Host "::warning::tesseract install attempt $attempt produced nothing; retrying"
+            Start-Sleep -Seconds 20
           }
+          if (-not $exe) { throw "tesseract.exe absent after 3 install attempts" }
           echo $exe.DirectoryName >> $env:GITHUB_PATH
           & $exe.FullName --version
 
@@ -73,8 +83,26 @@ jobs:
       - name: Verify the frozen bundle
         run: dist\MultyCapture\MultyCapture.exe selftest
 
+      # Same feed, same silent pass-through as the tesseract step above: a
+      # failure here used to reappear as "iscc is not recognized" in Build
+      # installer, which says nothing about the cause.
       - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
+        run: |
+          $globs = @("$env:ProgramFiles\Inno Setup*", "${env:ProgramFiles(x86)}\Inno Setup*")
+          $iscc = $null
+          foreach ($attempt in 1..3) {
+            choco install innosetup -y --no-progress
+            $iscc = Get-ChildItem -Path $globs -Filter ISCC.exe -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+            if ($iscc) { break }
+            Write-Host "::warning::Inno Setup install attempt $attempt produced nothing; retrying"
+            Start-Sleep -Seconds 20
+          }
+          if (-not $iscc) { throw "ISCC.exe absent after 3 install attempts" }
+          echo $iscc.DirectoryName >> $env:GITHUB_PATH
+          # Reporting the path, not running it: ISCC exits non-zero when given
+          # no .iss, and a trailing non-zero exit code fails the whole step.
+          Write-Host "found $($iscc.FullName)"
 
       - name: Derive version
         id: ver
