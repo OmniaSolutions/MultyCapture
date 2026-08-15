@@ -32,12 +32,27 @@ jobs:
       # had never run on Windows anywhere — this job went green with the whole
       # OCR path unexecuted, which is exactly what MULTYCAPTURE_REQUIRE_OCR
       # exists to prevent on Linux.
-      # The PATH line is not redundant: the package installs into Program Files
-      # and the current step's PATH is not inherited by the next one.
+      # choco exits 0 and the install directory is not guaranteed: appending a
+      # guessed "C:\Program Files\Tesseract-OCR" to GITHUB_PATH passed on one
+      # run and left nothing on PATH on the next, on the same commit — runner
+      # images vary. So find the binary, fail here if it is absent rather than
+      # three steps later, and prove it runs. GITHUB_PATH is needed regardless:
+      # a step's own PATH is not inherited by the next one.
       - name: Install tesseract
         run: |
           choco install tesseract -y --no-progress
-          echo "C:\Program Files\Tesseract-OCR" >> $env:GITHUB_PATH
+          $roots = @(
+            "$env:ProgramFiles\Tesseract-OCR",
+            "${env:ProgramFiles(x86)}\Tesseract-OCR",
+            "$env:ChocolateyInstall\bin"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+          $exe = Get-ChildItem -Path $roots -Filter tesseract.exe -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+          if (-not $exe) {
+            throw "choco reported success but no tesseract.exe under: $($roots -join ', ')"
+          }
+          echo $exe.DirectoryName >> $env:GITHUB_PATH
+          & $exe.FullName --version
 
       # Windows is where the suite is most worth running and was least run:
       # QSettings lives in the registry here, not in a file, and the Documents
