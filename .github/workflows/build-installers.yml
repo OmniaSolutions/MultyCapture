@@ -32,12 +32,7 @@ jobs:
       # had never run on Windows anywhere — this job went green with the whole
       # OCR path unexecuted, which is exactly what MULTYCAPTURE_REQUIRE_OCR
       # exists to prevent on Linux.
-      # choco exits 0 and the install directory is not guaranteed: appending a
-      # guessed "C:\Program Files\Tesseract-OCR" to GITHUB_PATH passed on one
-      # run and left nothing on PATH on the next, on the same commit — runner
-      # images vary. So find the binary, fail here if it is absent rather than
-      # three steps later, and prove it runs. GITHUB_PATH is needed regardless:
-      # a step's own PATH is not inherited by the next one.
+      #
       # Not via chocolatey. community.chocolatey.org answers 499 to GitHub's
       # runner IPs when it is throttling CI traffic -- it failed the v0.2.0 tag
       # build and then three retries in a row, while answering 200 from a
@@ -90,26 +85,30 @@ jobs:
       - name: Verify the frozen bundle
         run: dist\MultyCapture\MultyCapture.exe selftest
 
-      # Same feed, same silent pass-through as the tesseract step above: a
-      # failure here used to reappear as "iscc is not recognized" in Build
-      # installer, which says nothing about the cause.
-      - name: Install Inno Setup
+      # Nothing is installed here: the windows-2022 and windows-2025 runner
+      # images both ship InnoSetup 6.7.1. The old step ran
+      # "choco install innosetup" to fetch a compiler the machine already had,
+      # and that redundant download is what blocked the v0.2.0 release when
+      # community.chocolatey.org began answering 499 to the runners.
+      #
+      # Locating it rather than assuming a path: the install directory carries
+      # the major version ("Inno Setup 6"), so a hardcoded one breaks the day
+      # the image ships 7.
+      - name: Locate Inno Setup
         run: |
-          $globs = @("$env:ProgramFiles\Inno Setup*", "${env:ProgramFiles(x86)}\Inno Setup*")
-          $iscc = $null
-          foreach ($attempt in 1..3) {
-            choco install innosetup -y --no-progress
-            $iscc = Get-ChildItem -Path $globs -Filter ISCC.exe -ErrorAction SilentlyContinue |
-                    Select-Object -First 1
-            if ($iscc) { break }
-            Write-Host "::warning::Inno Setup install attempt $attempt produced nothing; retrying"
-            Start-Sleep -Seconds 20
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $roots = @("$env:ProgramFiles", "${env:ProgramFiles(x86)}") |
+                     Where-Object { $_ -and (Test-Path $_) }
+            $found = Get-ChildItem -Path $roots -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+            if (-not $found) { throw "no ISCC.exe on this runner image" }
+            $iscc = $found.FullName
+            echo $found.DirectoryName >> $env:GITHUB_PATH
           }
-          if (-not $iscc) { throw "ISCC.exe absent after 3 install attempts" }
-          echo $iscc.DirectoryName >> $env:GITHUB_PATH
-          # Reporting the path, not running it: ISCC exits non-zero when given
-          # no .iss, and a trailing non-zero exit code fails the whole step.
-          Write-Host "found $($iscc.FullName)"
+          # Printing the path, not running it: ISCC exits non-zero when given no
+          # .iss, and a trailing non-zero exit code would fail the step.
+          Write-Host "using $iscc"
 
       - name: Derive version
         id: ver
