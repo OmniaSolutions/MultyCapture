@@ -38,29 +38,36 @@ jobs:
       # images vary. So find the binary, fail here if it is absent rather than
       # three steps later, and prove it runs. GITHUB_PATH is needed regardless:
       # a step's own PATH is not inherited by the next one.
+      # Not via chocolatey. community.chocolatey.org answers 499 to GitHub's
+      # runner IPs when it is throttling CI traffic -- it failed the v0.2.0 tag
+      # build and then three retries in a row, while answering 200 from a
+      # developer machine at the same moment. choco also installed nothing and
+      # returned quietly: PowerShell does not abort on a native command's exit
+      # code, and GitHub's pwsh wrapper inspects only the last one.
+      #
+      # UB Mannheim is the Windows build the tesseract project itself points
+      # at. Pinning the version and its hash makes the build reproducible and
+      # means a substituted file fails here rather than being installed. To
+      # move to a newer tesseract, change both lines together.
       - name: Install tesseract
+        env:
+          TESSERACT_URL: https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.4.0.20240606.exe
+          TESSERACT_SHA256: c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9
         run: |
-          # community.chocolatey.org returned a 499 mid-release and choco
-          # installed nothing. PowerShell does not abort on a native command's
-          # exit code and GitHub's pwsh wrapper only inspects the last one, so
-          # that failure passed silently and surfaced three steps later. Hence:
-          # retry the transient case, then verify rather than assume.
-          $exe = $null
-          foreach ($attempt in 1..3) {
-            choco install tesseract -y --no-progress
-            $roots = @(
-              "$env:ProgramFiles\Tesseract-OCR",
-              "${env:ProgramFiles(x86)}\Tesseract-OCR"
-            ) | Where-Object { $_ -and (Test-Path $_) }
-            if ($roots) {
-              $exe = Get-ChildItem -Path $roots -Filter tesseract.exe -ErrorAction SilentlyContinue |
-                     Select-Object -First 1
-            }
-            if ($exe) { break }
-            Write-Host "::warning::tesseract install attempt $attempt produced nothing; retrying"
-            Start-Sleep -Seconds 20
+          $setup = "$env:RUNNER_TEMP\tesseract-setup.exe"
+          Invoke-WebRequest -Uri $env:TESSERACT_URL -OutFile $setup -UseBasicParsing
+          $got = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:TESSERACT_SHA256) {
+            throw "tesseract installer hash mismatch: got $got, expected $($env:TESSERACT_SHA256)"
           }
-          if (-not $exe) { throw "tesseract.exe absent after 3 install attempts" }
+          # NSIS silent install. The runner account is an administrator, so the
+          # installer's elevation requirement is satisfied here -- unlike under
+          # VBoxManage guestcontrol, which cannot answer a UAC prompt.
+          Start-Process -FilePath $setup -ArgumentList '/S' -Wait -NoNewWindow
+          $roots = @("$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\Tesseract-OCR")
+          $exe = Get-ChildItem -Path $roots -Filter tesseract.exe -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+          if (-not $exe) { throw "installer ran but no tesseract.exe was produced" }
           echo $exe.DirectoryName >> $env:GITHUB_PATH
           & $exe.FullName --version
 
